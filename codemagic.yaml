@@ -1,14 +1,21 @@
+
 workflows:
-  build-android:
+  android-build:
     name: Build Android APK
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
     scripts:
-      - name: Create android folder
+      - name: Create full Android folder (V2 embedding + compileSdk 36)
         script: |
-          # إنشاء مجلد android بالكامل
+          # إنشاء المجلدات الأساسية
           mkdir -p android/app/src/main/kotlin/com/example/app
           mkdir -p android/app/src/main/res/values
-          
-          # إنشاء ملف build.gradle الرئيسي
+          mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/drawable-v21
+
+          # ملف build.gradle الرئيسي
           cat > android/build.gradle << 'EOF'
           buildscript {
               ext.kotlin_version = '1.9.0'
@@ -22,8 +29,8 @@ workflows:
           allprojects { repositories { google(); mavenCentral() } }
           task clean(type: Delete) { delete rootProject.buildDir }
           EOF
-          
-          # إنشاء ملف app/build.gradle (مع compileSdk 36)
+
+          # ملف app/build.gradle (compileSdk 36, V2 embedding)
           cat > android/app/build.gradle << 'EOF'
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
@@ -35,7 +42,7 @@ workflows:
           apply plugin: 'com.android.application'
           apply plugin: 'kotlin-android'
           apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
-          
+
           android {
               compileSdkVersion 36
               compileOptions {
@@ -49,6 +56,7 @@ workflows:
                   targetSdkVersion 36
                   versionCode 1
                   versionName "1.0"
+                  multiDexEnabled true
               }
               buildTypes {
                   release { signingConfig signingConfigs.debug }
@@ -57,26 +65,88 @@ workflows:
           flutter { source '../..' }
           dependencies {
               implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+              implementation 'androidx.multidex:multidex:2.0.1'
           }
           EOF
-          
-          # إنشاء AndroidManifest.xml
+
+          # ملف AndroidManifest.xml (V2 embedding)
           cat > android/app/src/main/AndroidManifest.xml << 'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.example.app">
-              <application android:label="Water Tank" android:icon="@mipmap/ic_launcher">
-                  <activity android:name=".MainActivity" android:exported="true"
-                      android:theme="@style/LaunchTheme">
+              <application
+                  android:label="Water Tank"
+                  android:name="androidx.multidex.MultiDexApplication"
+                  android:icon="@mipmap/ic_launcher">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <meta-data
+                          android:name="io.flutter.embedding.android.NormalTheme"
+                          android:resource="@style/NormalTheme" />
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
                   </activity>
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
               </application>
           </manifest>
           EOF
-          echo "✅ Android folder created with compileSdk=36"
-      
+
+          # ملف MainActivity.kt (V2 embedding)
+          cat > android/app/src/main/kotlin/com/example/app/MainActivity.kt << 'EOF'
+          package com.example.app
+          import io.flutter.embedding.android.FlutterActivity
+          class MainActivity: FlutterActivity()
+          EOF
+
+          # ملف styles.xml
+          cat > android/app/src/main/res/values/styles.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+                  <item name="android:windowBackground">@drawable/launch_background</item>
+              </style>
+              <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+                  <item name="android:windowBackground">?android:colorBackground</item>
+              </style>
+          </resources>
+          EOF
+
+          # ملف launch_background.xml
+          cat > android/app/src/main/res/drawable/launch_background.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:drawable="@android:color/white" />
+          </layer-list>
+          EOF
+
+          # ملف launch_background.xml (v21)
+          cat > android/app/src/main/res/drawable-v21/launch_background.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:drawable="?android:colorBackground" />
+          </layer-list>
+          EOF
+
+          echo "✅ Android V2 folder created with compileSdk=36"
+
+      - name: Get packages
+        script: flutter pub get
+
       - name: Build APK
-        script: |
-          flutter build apk --release
+        script: flutter build apk --release
+
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+
+    publishing:
+      email:
+        recipients:
+          - your_email@example.com

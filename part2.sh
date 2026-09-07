@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+
+# 1. تعديل شاشة العملاء (إضافة أزرار اتصال + تسجيل عمليات + كشف حساب)
+cat > lib/screens/clients/clients_screen.dart << 'DART'
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../models/client.dart';
+import '../../models/operation_log.dart';
+import '../../services/client_service.dart';
+import '../../services/operation_log_service.dart';
+import '../../core/network/communication_service.dart';
+import '../../core/auth/user_provider.dart';
+import '../../core/auth/permission_service.dart';
+import '../../core/constants/permissions.dart';
+
+class ClientsScreen extends StatefulWidget {
+  const ClientsScreen({super.key});
+  @override
+  State<ClientsScreen> createState() => _ClientsScreenState();
+}
+
+class _ClientsScreenState extends State<ClientsScreen> {
+  final ClientService _service = ClientService();
+  final OperationLogService _logService = OperationLogService();
+  late Future<List<Client>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _service.getAllClients();
+  }
+
+  void _refresh() {
+    setState(() => _future = _service.getAllClients());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<UserProvider>().currentUser;
+    final canAdd = PermissionService.hasPermission(user, PermissionKeys.clientsAdd);
+    final canEdit = PermissionService.hasPermission(user, PermissionKeys.clientsEdit);
+    final canDelete = PermissionService.hasPermission(user, PermissionKeys.clientsDelete);
+    return Scaffold(
+      appBar: AppBar(title: const Text('العملاء')),
+      body: FutureBuilder<List<Client>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('لا يوجد عملاء'));
+          }
+          return ListView.builder(
+            itemCount: snapshot.data!.length,
+            itemBuilder: (context, index) {
+              final client = snapshot.data![index];
+              return ListTile(
+                title: Text(client.name),
+                subtitle: Text(client.phone ?? ''),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(icon: const Icon(Icons.call), onPressed: () => CommunicationService.callPhone(client.phone ?? '')),
+                    IconButton(icon: const Icon(Icons.chat), onPressed: () => CommunicationService.openWhatsApp(client.phone ?? '', 'مرحباً ${client.name}')),
+                    if (canEdit) IconButton(icon: const Icon(Icons.edit), onPressed: () => _showClientDialog(client)),
+                    if (canDelete) IconButton(icon: const Icon(Icons.delete), onPressed: () => _confirmDelete(client)),
+                  ],
+                ),
+                onTap: () => _showStatement(client),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: canAdd ? FloatingActionButton(
+        onPressed: () => _showClientDialog(null),
+        child: const Icon(Icons.add),
+      ) : null,
+    );
+  }
+
+  void _showClientDialog(Client? existing) {
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
+    final addressCtrl = TextEditingController(text: existing?.address ?? '');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(existing == null ? 'إضافة عميل' : 'تعديل عميل'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'اسم العميل')),
+            TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'الهاتف')),
+            TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'العنوان')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+          ElevatedButton(
+            onPressed: () async {
+              final now = DateTime.now().toIso8601String();
+              final client = Client(
+                id: existing?.id,
+                name: nameCtrl.text.trim(),
+                phone: phoneCtrl.text.trim(),
+                address: addressCtrl.text.trim(),
+                createdAt: existing?.createdAt ?? now,
+                updatedAt: now,
+              );
+              if (existing == null) {
+                final id = await _service.addClient(client);
+                final user = context.read<UserProvider>().currentUser;
+                if (user != null) {
+                  await _logService.addLog(OperationLog(
+                    userId: user.id!,
+                    action: 'create',
+                    tableName: 'clients',
+                    recordId: id,
+                    details: 'إضافة عميل: ${client.name}',
+                    timestamp: now,
+                  ));
+                }
+              } else {
+                await _service.updateClient(client);
+                final user = context.read<UserProvider>().currentUser;
+                if (user != null) {
+                  await _logService.addLog(OperationLog(
+                    userId: user.id!,
+                    action: 'update',
+                    tableName: 'clients',
+                    recordId: client.id!,
+                    details: 'تعديل عميل: ${client.name}',
+                    timestamp: now,
+                  ));
+                }
+              }
+              if (context.mounted) Navigator.pop(context);
+              _refresh();
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDelete(Client client) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: Text('هل تريد حذف ${client.name}؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+          ElevatedButton(
+            onPressed: () async {
+              await _service.deleteClient(client.id!);
+              final user = context.read<UserProvider>().currentUser;
+              if (user != null) {
+                await _logService.addLog(OperationLog(
+                  userId: user.id!,
+                  action: 'delete',
+                  tableName: 'clients',
+                  recordId: client.id!,
+                  details: 'حذف عميل: ${client.name}',
+                  timestamp: DateTime.now().toIso8601String(),
+                ));
+              }
+              if (context.mounted) Navigator.pop(context);
+              _refresh();
+            },
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showStatement(Client client) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientStatementScreen(clientId: client.id!)));
+  }
+}
+
+class ClientStatementScreen extends StatelessWidget {
+  final int clientId;
+  const ClientStatementScreen({super.key, required this.clientId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('كشف حساب عميل')),
+      body: const Center(child: Text('كشف الحساب سيظهر هنا')),
+    );
+  }
+}
+DART
+
+# 2. تعديل شاشة الموردين (إضافة أزرار اتصال)
+cat > lib/screens/suppliers/suppliers_screen.dart << 'DART'
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../models/supplier.dart';
+import '../../services/supplier_service.dart';
+import '../../core/network/communication_service.dart';
+import '../../core/auth/user_provider.dart';
+import '../../core/auth/permission_service.dart';
+import '../../core/constants/permissions.dart';
+
+class SuppliersScreen extends StatefulWidget {
+  const SuppliersScreen({super.key});
+  @override
+  State<SuppliersScreen> createState() => _SuppliersScreenState();
+}
+
+class _SuppliersScreenState extends State<SuppliersScreen> {
+  final SupplierService _service = SupplierService();
+  late Future<List<Supplier>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _service.getAllSuppliers();
+  }
+
+  void _refresh() => setState(() => _future = _service.getAllSuppliers());
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<UserProvider>().currentUser;
+    final canAdd = PermissionService.hasPermission(user, PermissionKeys.suppliersAdd);
+    final canEdit = PermissionService.hasPermission(user, PermissionKeys.suppliersEdit);
+    final canDelete = PermissionService.hasPermission(user, PermissionKeys.suppliersDelete);
+    return Scaffold(
+      appBar: AppBar(title: const Text('الموردون')),
+      body: FutureBuilder<List<Supplier>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData || snapshot.data!.isEmpty) return const Center(child: Text('لا يوجد موردون'));
+          return ListView.builder(
+            itemCount: snapshot.data!.length,
+            itemBuilder: (context, index) {
+              final supplier = snapshot.data![index];
+              return ListTile(
+                title: Text(supplier.name),
+                subtitle: Text(supplier.phone ?? ''),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(icon: const Icon(Icons.call), onPressed: () => CommunicationService.callPhone(supplier.phone ?? '')),
+                    IconButton(icon: const Icon(Icons.chat), onPressed: () => CommunicationService.openWhatsApp(supplier.phone ?? '', 'مرحباً ${supplier.name}')),
+                    if (canEdit) IconButton(icon: const Icon(Icons.edit), onPressed: () {}),
+                    if (canDelete) IconButton(icon: const Icon(Icons.delete), onPressed: () {}),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: canAdd ? FloatingActionButton(onPressed: () {}, child: const Icon(Icons.add)) : null,
+    );
+  }
+}
+DART
+
+echo "✅ تم إنشاء الجزء الثاني بنجاح!"

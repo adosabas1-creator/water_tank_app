@@ -1,4 +1,3 @@
-
 workflows:
   android-build:
     name: Build Android APK
@@ -7,56 +6,76 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Create full Android folder (V2 embedding + compileSdk 36)
+      - name: Create full Android project (new Gradle plugin)
         script: |
-          # إنشاء المجلدات الأساسية
           mkdir -p android/app/src/main/kotlin/com/example/app
           mkdir -p android/app/src/main/res/values
           mkdir -p android/app/src/main/res/drawable
           mkdir -p android/app/src/main/res/drawable-v21
 
-          # ملف build.gradle الرئيسي
-          cat > android/build.gradle << 'EOF'
-          buildscript {
-              ext.kotlin_version = '1.9.0'
-              repositories { google(); mavenCentral() }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:7.3.0'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-                  classpath 'com.google.gms:google-services:4.3.15'
+          cat > android/settings.gradle << 'EOF2'
+          pluginManagement {
+              def flutterSdkPath = {
+                  def properties = new Properties()
+                  file("local.properties").withInputStream { properties.load(it) }
+                  def flutterSdkPath = properties.getProperty("flutter.sdk")
+                  assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+                  return flutterSdkPath
               }
+              settings.ext.flutterSdkPath = flutterSdkPath()
+              includeBuild("${settings.ext.flutterSdkPath}/packages/flutter_tools/gradle")
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          plugins {
+              id "dev.flutter.flutter-plugin-loader" version "1.0.0"
+              id "com.android.application" version "7.3.0" apply false
+              id "org.jetbrains.kotlin.android" version "1.9.0" apply false
+          }
+          include ":app"
+          EOF2
+
+          cat > android/build.gradle << 'EOF2'
+          buildscript {
+              repositories { google(); mavenCentral() }
           }
           allprojects { repositories { google(); mavenCentral() } }
           task clean(type: Delete) { delete rootProject.buildDir }
-          EOF
+          EOF2
 
-          # ملف app/build.gradle (compileSdk 36, V2 embedding)
-          cat > android/app/build.gradle << 'EOF'
+          cat > android/app/build.gradle << 'EOF2'
+          plugins {
+              id "com.android.application"
+              id "org.jetbrains.kotlin.android"
+              id "dev.flutter.flutter-gradle-plugin"
+          }
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
           if (localPropertiesFile.exists()) {
               localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
           }
-          def flutterRoot = localProperties.getProperty('flutter.sdk')
-          if (flutterRoot == null) { throw new GradleException("Flutter SDK not found.") }
-          apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
-          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
-
+          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+          if (flutterVersionCode == null) { flutterVersionCode = '1' }
+          def flutterVersionName = localProperties.getProperty('flutter.versionName')
+          if (flutterVersionName == null) { flutterVersionName = '1.0' }
           android {
-              compileSdkVersion 36
+              compileSdk 36
+              ndkVersion flutter.ndkVersion
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_1_8
                   targetCompatibility JavaVersion.VERSION_1_8
               }
               kotlinOptions { jvmTarget = '1.8' }
+              sourceSets { main.java.srcDirs += 'src/main/kotlin' }
               defaultConfig {
                   applicationId "com.example.app"
-                  minSdkVersion 21
-                  targetSdkVersion 36
-                  versionCode 1
-                  versionName "1.0"
-                  multiDexEnabled true
+                  minSdk 21
+                  targetSdk 36
+                  versionCode flutterVersionCode.toInteger()
+                  versionName flutterVersionName
               }
               buildTypes {
                   release { signingConfig signingConfigs.debug }
@@ -64,13 +83,11 @@ workflows:
           }
           flutter { source '../..' }
           dependencies {
-              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
               implementation 'androidx.multidex:multidex:2.0.1'
           }
-          EOF
+          EOF2
 
-          # ملف AndroidManifest.xml (V2 embedding)
-          cat > android/app/src/main/AndroidManifest.xml << 'EOF'
+          cat > android/app/src/main/AndroidManifest.xml << 'EOF2'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.example.app">
               <application
@@ -97,17 +114,15 @@ workflows:
                       android:value="2" />
               </application>
           </manifest>
-          EOF
+          EOF2
 
-          # ملف MainActivity.kt (V2 embedding)
-          cat > android/app/src/main/kotlin/com/example/app/MainActivity.kt << 'EOF'
+          cat > android/app/src/main/kotlin/com/example/app/MainActivity.kt << 'EOF2'
           package com.example.app
           import io.flutter.embedding.android.FlutterActivity
           class MainActivity: FlutterActivity()
-          EOF
+          EOF2
 
-          # ملف styles.xml
-          cat > android/app/src/main/res/values/styles.xml << 'EOF'
+          cat > android/app/src/main/res/values/styles.xml << 'EOF2'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
@@ -117,25 +132,27 @@ workflows:
                   <item name="android:windowBackground">?android:colorBackground</item>
               </style>
           </resources>
-          EOF
+          EOF2
 
-          # ملف launch_background.xml
-          cat > android/app/src/main/res/drawable/launch_background.xml << 'EOF'
+          cat > android/app/src/main/res/drawable/launch_background.xml << 'EOF2'
           <?xml version="1.0" encoding="utf-8"?>
           <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
               <item android:drawable="@android:color/white" />
           </layer-list>
-          EOF
+          EOF2
 
-          # ملف launch_background.xml (v21)
-          cat > android/app/src/main/res/drawable-v21/launch_background.xml << 'EOF'
+          cat > android/app/src/main/res/drawable-v21/launch_background.xml << 'EOF2'
           <?xml version="1.0" encoding="utf-8"?>
           <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
               <item android:drawable="?android:colorBackground" />
           </layer-list>
-          EOF
+          EOF2
 
-          echo "✅ Android V2 folder created with compileSdk=36"
+          cat > android/local.properties << 'EOF2'
+          flutter.sdk=/Users/builder/programs/flutter
+          EOF2
+
+          echo "✅ Android project created with new Gradle plugin and compileSdk=36"
 
       - name: Get packages
         script: flutter pub get

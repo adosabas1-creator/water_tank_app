@@ -1,18 +1,82 @@
 workflows:
-  android-build:
+  build-android:
     name: Build Android APK
-    max_build_duration: 60
-    instance_type: mac_mini_m2
-    environment:
-      flutter: stable
     scripts:
-      - name: Get packages
-        script: flutter pub get
+      - name: Create android folder
+        script: |
+          # إنشاء مجلد android بالكامل
+          mkdir -p android/app/src/main/kotlin/com/example/app
+          mkdir -p android/app/src/main/res/values
+          
+          # إنشاء ملف build.gradle الرئيسي
+          cat > android/build.gradle << 'EOF'
+          buildscript {
+              ext.kotlin_version = '1.9.0'
+              repositories { google(); mavenCentral() }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.3.0'
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+                  classpath 'com.google.gms:google-services:4.3.15'
+              }
+          }
+          allprojects { repositories { google(); mavenCentral() } }
+          task clean(type: Delete) { delete rootProject.buildDir }
+          EOF
+          
+          # إنشاء ملف app/build.gradle (مع compileSdk 36)
+          cat > android/app/build.gradle << 'EOF'
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+          }
+          def flutterRoot = localProperties.getProperty('flutter.sdk')
+          if (flutterRoot == null) { throw new GradleException("Flutter SDK not found.") }
+          apply plugin: 'com.android.application'
+          apply plugin: 'kotlin-android'
+          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+          
+          android {
+              compileSdkVersion 36
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+              kotlinOptions { jvmTarget = '1.8' }
+              defaultConfig {
+                  applicationId "com.example.app"
+                  minSdkVersion 21
+                  targetSdkVersion 36
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release { signingConfig signingConfigs.debug }
+              }
+          }
+          flutter { source '../..' }
+          dependencies {
+              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+          }
+          EOF
+          
+          # إنشاء AndroidManifest.xml
+          cat > android/app/src/main/AndroidManifest.xml << 'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.example.app">
+              <application android:label="Water Tank" android:icon="@mipmap/ic_launcher">
+                  <activity android:name=".MainActivity" android:exported="true"
+                      android:theme="@style/LaunchTheme">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          echo "✅ Android folder created with compileSdk=36"
+      
       - name: Build APK
-        script: flutter build apk --release
-    artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
-    publishing:
-      email:
-        recipients:
-          - your_email@example.com
+        script: |
+          flutter build apk --release

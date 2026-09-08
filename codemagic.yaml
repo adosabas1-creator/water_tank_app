@@ -6,11 +6,12 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Setup Java 17
+      - name: Install Java 17 and dependencies
         script: |
-          apt-get update && apt-get install -y openjdk-17-jdk
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk curl unzip
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
-          echo "JAVA_HOME set to $JAVA_HOME"
+          echo "JAVA_HOME=$JAVA_HOME" >> $CM_ENV
           java -version
 
       - name: Create Android folder structure
@@ -183,8 +184,8 @@ workflows:
       - name: Write local.properties
         script: |
           cat > android/local.properties << 'EOL'
-          sdk.dir=/usr/local/android-sdk
-          flutter.sdk=/usr/local/flutter
+          sdk.dir=/Users/builder/programs/flutter
+          flutter.sdk=/Users/builder/programs/flutter
           EOL
 
       - name: Write gradle.properties

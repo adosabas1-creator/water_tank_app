@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../database/database_helper.dart';
@@ -23,7 +24,7 @@ class SyncService {
             .set(row, SetOptions(merge: true));
         await db.update(tableName, {'is_synced': 1}, where: 'id = ?', whereArgs: [row['id']]);
       } catch (e) {
-        print('Sync error for $tableName id ${row['id']}: $e');
+        debugPrint('Sync error for $tableName id ${row['id']}: $e');
       }
     }
   }

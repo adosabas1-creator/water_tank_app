@@ -4,10 +4,10 @@ class ConnectivityService {
   final Connectivity _connectivity = Connectivity();
 
   Stream<bool> get onConnectivityChanged =>
-      _connectivity.onConnectivityChanged.map((result) => result != ConnectivityResult.none);
+      _connectivity.onConnectivityChanged.map((result) => !result.contains(ConnectivityResult.none));
 
   Future<bool> isOnline() async {
     final result = await _connectivity.checkConnectivity();
-    return result != ConnectivityResult.none;
+    return !result.contains(ConnectivityResult.none);
   }
 }

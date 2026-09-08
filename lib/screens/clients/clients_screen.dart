@@ -98,6 +98,10 @@ class _ClientsScreenState extends State<ClientsScreen> {
           ElevatedButton(
             onPressed: () async {
               final now = DateTime.now().toIso8601String();
+              if (!mounted) return;
+              final dialogContext = context;
+              if (!dialogContext.mounted) return;
+              final user = dialogContext.read<UserProvider>().currentUser;
               final client = Client(
                 id: existing?.id,
                 name: nameCtrl.text.trim(),
@@ -106,9 +110,9 @@ class _ClientsScreenState extends State<ClientsScreen> {
                 createdAt: existing?.createdAt ?? now,
                 updatedAt: now,
               );
+
               if (existing == null) {
                 final id = await _service.addClient(client);
-                final user = context.read<UserProvider>().currentUser;
                 if (user != null) {
                   await _logService.addLog(OperationLog(
                     userId: user.id!,
@@ -121,7 +125,6 @@ class _ClientsScreenState extends State<ClientsScreen> {
                 }
               } else {
                 await _service.updateClient(client);
-                final user = context.read<UserProvider>().currentUser;
                 if (user != null) {
                   await _logService.addLog(OperationLog(
                     userId: user.id!,
@@ -133,7 +136,9 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   ));
                 }
               }
-              if (context.mounted) Navigator.pop(context);
+
+              if (!mounted) return;
+              Navigator.pop(this.context);
               _refresh();
             },
             child: const Text('حفظ'),
@@ -153,8 +158,12 @@ class _ClientsScreenState extends State<ClientsScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
           ElevatedButton(
             onPressed: () async {
+              if (!mounted) return;
+              final dialogContext = context;
+              if (!dialogContext.mounted) return;
+              final user = dialogContext.read<UserProvider>().currentUser;
               await _service.deleteClient(client.id!);
-              final user = context.read<UserProvider>().currentUser;
+
               if (user != null) {
                 await _logService.addLog(OperationLog(
                   userId: user.id!,
@@ -165,7 +174,9 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   timestamp: DateTime.now().toIso8601String(),
                 ));
               }
-              if (context.mounted) Navigator.pop(context);
+
+              if (!mounted) return;
+              Navigator.pop(this.context);
               _refresh();
             },
             child: const Text('حذف'),

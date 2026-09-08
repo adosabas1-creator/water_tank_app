@@ -13,7 +13,7 @@ class DashboardScreen extends StatelessWidget {
     final user = context.watch<UserProvider>().currentUser;
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppConstants.companyName),
+        title: const Text(AppConstants.companyName),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -41,7 +41,11 @@ class DashboardScreen extends StatelessWidget {
           _buildCard(context, 'المصروفات', Icons.money_off, '/expenses'),
           _buildCard(context, 'الرواتب', Icons.attach_money, '/salaries'),
           _buildCard(context, 'التقارير', Icons.report, '/reports'),
-          _buildCard(context, 'كشوف الحسابات', Icons.receipt_long, '/statements'),
+          if (PermissionService.hasAnyPermission(user, [
+            PermissionKeys.clientStatementsView,
+            PermissionKeys.supplierStatementsView,
+          ]))
+            _buildCard(context, 'كشوف الحسابات', Icons.receipt_long, '/statements'),
           if (PermissionService.hasPermission(user, PermissionKeys.usersManage))
             _buildCard(context, 'المستخدمون', Icons.admin_panel_settings, '/users'),
           _buildCard(context, 'سجل العمليات', Icons.history, '/logs'),

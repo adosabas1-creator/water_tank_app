@@ -1,5 +1,5 @@
+import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
-import 'package:sqflite/sqflite.dart';
 import 'dart:convert';
 import 'database_helper.dart';
 
@@ -14,7 +14,7 @@ Future<void> seedAdminUser() async {
   );
 
   if (existing.isNotEmpty) {
-    print('Admin user already exists');
+    debugPrint('Admin user already exists');
     return;
   }
 
@@ -35,5 +35,5 @@ Future<void> seedAdminUser() async {
     'is_synced': 0,
   });
 
-  print('Admin user created successfully');
+  debugPrint('Admin user created successfully');
 }

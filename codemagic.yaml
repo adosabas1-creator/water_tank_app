@@ -6,6 +6,12 @@ workflows:
     environment:
       flutter: stable
     scripts:
+      - name: Create android folder
+        script: |
+          rm -rf android
+          flutter create --platforms=android .
+          echo "✅ Android folder created"
+
       - name: Fix compileSdk and minSdk
         script: |
           sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle || true
@@ -13,12 +19,16 @@ workflows:
           sed -i 's/compileSdk = .*/compileSdk = 34/g' android/app/build.gradle.kts || true
           sed -i 's/minSdk = .*/minSdk = 21/g' android/app/build.gradle.kts || true
           echo "✅ compileSdk=34, minSdk=21"
+
       - name: Get packages
         script: flutter pub get
+
       - name: Build APK
         script: flutter build apk --release
+
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
+
     publishing:
       email:
         recipients:

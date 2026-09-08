@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:provider/provider.dart';
+import 'core/auth/user_provider.dart';
 import 'screens/login/login_screen.dart';
 import 'core/database/seed.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider<UserProvider>(
+      create: (_) => UserProvider(),
+      child: const MyApp(),
+    ),
+  );
 
   _initializeFirebase();
   _initializeDatabase();

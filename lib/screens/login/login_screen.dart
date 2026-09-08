@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/auth/auth_service.dart';
-import '../../core/database/database_helper.dart';
-import 'package:crypto/crypto.dart';
-import 'dart:convert';
 import '../../core/auth/user_provider.dart';
 import '../../core/constants/app_constants.dart';
-import '../../models/user.dart';
 import '../dashboard/dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -80,11 +76,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     validator: (v) => v!.isEmpty ? 'أدخل كلمة المرور' : null,
                   ),
                   const SizedBox(height: 24),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: _checkDatabase,
-                    child: const Text('فحص قاعدة البيانات'),
-                  ),
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -108,69 +99,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
 
-  Future<void> _checkDatabase() async {
-    try {
-      final db = await DatabaseHelper().database;
-
-      final users = await db.query('users');
-
-      final expectedHash =
-          sha256.convert(utf8.encode('admin123')).toString();
-
-      final admins = users.where((u) => u['username'] == 'admin').toList();
-
-      String message;
-
-      if (admins.isEmpty) {
-        message = 'قاعدة البيانات تعمل، لكن المستخدم admin غير موجود.\n'
-            'عدد المستخدمين: ${users.length}';
-      } else {
-        final admin = admins.first;
-        final storedHash = admin['password_hash'];
-
-        final passwordMatches = storedHash == expectedHash;
-
-        message = 'قاعدة البيانات تعمل.\n'
-            'عدد المستخدمين: ${users.length}\n'
-            'admin موجود: نعم\n'
-            'كلمة المرور admin123: '
-            '${passwordMatches ? 'مطابقة' : 'غير مطابقة'}\n'
-            'is_deleted: ${admin['is_deleted']}';
-      }
-
-      if (!mounted) return;
-
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('نتيجة الفحص'),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إغلاق'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('خطأ قاعدة البيانات'),
-          content: Text('$e'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إغلاق'),
-            ),
-          ],
-        ),
-      );
-    }
-  }
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) {
@@ -180,55 +108,37 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final username = _usernameController.text.trim();
-      final password = _passwordController.text;
-
-      final user = await _authService.login(username, password);
-
-      if (!mounted) return;
-
-      setState(() => _isLoading = false);
-
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('تشخيص تسجيل الدخول'),
-          content: Text(
-            user == null
-                ? 'AuthService رجع null\\n'
-                    'اسم المستخدم: $username\\n'
-                    'كلمة المرور: admin123'
-                : 'تم تسجيل الدخول بنجاح\\n'
-                    'المستخدم: ${user.username}\\n'
-                    'الاسم: ${user.fullName}\\n'
-                    'الدور: ${user.role}',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إغلاق'),
-            ),
-          ],
-        ),
+      final user = await _authService.login(
+        _usernameController.text.trim(),
+        _passwordController.text,
       );
-    } catch (e, stackTrace) {
+
       if (!mounted) return;
 
       setState(() => _isLoading = false);
 
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('خطأ أثناء تسجيل الدخول'),
-          content: SingleChildScrollView(
-            child: Text('$e\\n\\n$stackTrace'),
+      if (user != null) {
+        context.read<UserProvider>().setUser(user);
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const DashboardScreen(),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إغلاق'),
-            ),
-          ],
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('بيانات الدخول غير صحيحة'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('حدث خطأ أثناء تسجيل الدخول: $e'),
         ),
       );
     }

@@ -4,6 +4,20 @@ import 'package:provider/provider.dart';
 import 'core/auth/user_provider.dart';
 import 'screens/login/login_screen.dart';
 import 'core/database/seed.dart';
+import 'screens/dashboard/dashboard_screen.dart';
+import 'screens/clients/clients_screen.dart';
+import 'screens/suppliers/suppliers_screen.dart';
+import 'screens/drivers/drivers_screen.dart';
+import 'screens/tanks/tanks_screen.dart';
+import 'screens/filling/filling_screen.dart';
+import 'screens/sales/sales_screen.dart';
+import 'screens/payments/payments_screen.dart';
+import 'screens/expenses/expenses_screen.dart';
+import 'screens/salaries/salaries_screen.dart';
+import 'screens/reports/reports_screen.dart';
+import 'screens/statements/statements_screen.dart';
+import 'screens/users/users_screen.dart';
+import 'screens/logs/logs_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +54,23 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
       ),
       home: const LoginScreen(),
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/dashboard': (context) => const DashboardScreen(),
+        '/clients': (context) => const ClientsScreen(),
+        '/suppliers': (context) => const SuppliersScreen(),
+        '/drivers': (context) => const DriversScreen(),
+        '/tanks': (context) => const TanksScreen(),
+        '/filling': (context) => const FillingScreen(),
+        '/sales': (context) => const SalesScreen(),
+        '/payments': (context) => const PaymentsScreen(),
+        '/expenses': (context) => const ExpensesScreen(),
+        '/salaries': (context) => const SalariesScreen(),
+        '/reports': (context) => const ReportsScreen(),
+        '/statements': (context) => const StatementsScreen(),
+        '/users': (context) => const UsersScreen(),
+        '/logs': (context) => const LogsScreen(),
+      },
     );
   }
 }

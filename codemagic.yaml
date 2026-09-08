@@ -14,19 +14,17 @@ workflows:
           find android -name "*.kts" -type f -delete
           echo "🗑️ All .kts files deleted"
 
-      - name: Create modern Gradle files (plugins block)
+      - name: Create minimal Gradle files
         script: |
           cat > android/build.gradle << 'EOL'
           buildscript {
-              ext.kotlin_version = '1.9.0'
               repositories {
                   google()
                   mavenCentral()
               }
-
               dependencies {
                   classpath 'com.android.tools.build:gradle:7.4.2'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+                  classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0'
               }
           }
 
@@ -70,16 +68,6 @@ workflows:
               throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
           }
 
-          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
-          if (flutterVersionCode == null) {
-              flutterVersionCode = '1'
-          }
-
-          def flutterVersionName = localProperties.getProperty('flutter.versionName')
-          if (flutterVersionName == null) {
-              flutterVersionName = '1.0'
-          }
-
           android {
               compileSdkVersion 34
               ndkVersion "23.1.7779620"
@@ -101,8 +89,8 @@ workflows:
                   applicationId "com.example.water_tank_app"
                   minSdkVersion 21
                   targetSdkVersion 34
-                  versionCode flutterVersionCode.toInteger()
-                  versionName flutterVersionName
+                  versionCode 1
+                  versionName "1.0"
               }
 
               buildTypes {
@@ -115,16 +103,8 @@ workflows:
           flutter {
               source '../..'
           }
-
-          dependencies {
-              // Kotlin stdlib is included by the plugin
-          }
           EOL
 
-          echo "✅ Modern Gradle files created with plugins block"
-
-      - name: Create settings.gradle with pluginManagement
-        script: |
           cat > android/settings.gradle << 'EOL'
           pluginManagement {
               def flutterSdkPath = {
@@ -146,7 +126,8 @@ workflows:
           }
           include ":app"
           EOL
-          echo "✅ settings.gradle with pluginManagement created"
+
+          echo "✅ Minimal Gradle files created"
 
       - name: Get packages
         script: flutter pub get

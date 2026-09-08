@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'screens/login/login_screen.dart';
+import 'core/database/seed.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 
   _initializeFirebase();
+  _initializeDatabase();
 }
 
 Future<void> _initializeFirebase() async {
@@ -32,5 +34,16 @@ class MyApp extends StatelessWidget {
       ),
       home: const LoginScreen(),
     );
+  }
+}
+
+
+Future<void> _initializeDatabase() async {
+  try {
+    await seedAdminUser();
+    debugPrint('Local database initialized successfully');
+  } catch (e, stackTrace) {
+    debugPrint('Local database initialization failed: $e');
+    debugPrint('$stackTrace');
   }
 }

@@ -11,13 +11,11 @@ workflows:
           rm -rf android
           flutter create --platforms=android --android-language=java .
           echo "✅ Android folder created"
-          # حذف جميع ملفات Kotlin DSL (.kts) نهائياً
           find android -name "*.kts" -type f -delete
           echo "🗑️ All .kts files deleted"
 
-      - name: Create Groovy build.gradle files
+      - name: Create modern Gradle files (plugins block)
         script: |
-          # إنشاء android/build.gradle (المشروع الرئيسي)
           cat > android/build.gradle << 'EOL'
           buildscript {
               ext.kotlin_version = '1.9.0'
@@ -52,8 +50,13 @@ workflows:
           }
           EOL
 
-          # إنشاء android/app/build.gradle (التطبيق)
           cat > android/app/build.gradle << 'EOL'
+          plugins {
+              id 'com.android.application'
+              id 'kotlin-android'
+              id 'dev.flutter.flutter-gradle-plugin'
+          }
+
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
           if (localPropertiesFile.exists()) {
@@ -76,10 +79,6 @@ workflows:
           if (flutterVersionName == null) {
               flutterVersionName = '1.0'
           }
-
-          apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
-          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
           android {
               compileSdkVersion 34
@@ -118,25 +117,36 @@ workflows:
           }
 
           dependencies {
-              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+              // Kotlin stdlib is included by the plugin
           }
           EOL
 
-          echo "✅ Groovy build.gradle files created (compileSdk=34, minSdk=21, targetSdk=34)"
+          echo "✅ Modern Gradle files created with plugins block"
 
-      - name: Ensure settings.gradle exists
+      - name: Create settings.gradle with pluginManagement
         script: |
           cat > android/settings.gradle << 'EOL'
-          include ':app'
-          def localPropertiesFile = new File(rootProject.projectDir, "local.properties")
-          def properties = new Properties()
-          assert localPropertiesFile.exists()
-          localPropertiesFile.withReader("UTF-8") { reader -> properties.load(reader) }
-          def flutterSdkPath = properties.getProperty("flutter.sdk")
-          assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
-          apply from: "$flutterSdkPath/packages/flutter_tools/gradle/app_plugin_loader.gradle"
+          pluginManagement {
+              def flutterSdkPath = {
+                  def properties = new Properties()
+                  file("local.properties").withInputStream { properties.load(it) }
+                  def flutterSdkPath = properties.getProperty("flutter.sdk")
+                  assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+                  return flutterSdkPath
+              }()
+              includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          plugins {
+              id "dev.flutter.flutter-gradle-plugin" version "1.0.0" apply false
+          }
+          include ":app"
           EOL
-          echo "✅ settings.gradle created"
+          echo "✅ settings.gradle with pluginManagement created"
 
       - name: Get packages
         script: flutter pub get

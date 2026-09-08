@@ -2,14 +2,13 @@ workflows:
   android-build:
     name: Build Android APK
     max_build_duration: 60
-    instance_type: linux
     environment:
       flutter: stable
     scripts:
-      - name: Install Java 17 and dependencies
+      - name: Install Java 17 (Linux)
         script: |
           sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk curl unzip
+          sudo apt-get install -y openjdk-17-jdk
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
           echo "JAVA_HOME=$JAVA_HOME" >> $CM_ENV
           java -version

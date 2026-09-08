@@ -11,27 +11,78 @@ workflows:
           rm -rf android
           flutter create --platforms=android .
           echo "✅ Android folder created"
-          echo "📄 Showing build.gradle content (first 30 lines):"
-          head -30 android/app/build.gradle || echo "File not found!"
 
-      - name: Fix compileSdk
+      - name: Replace build.gradle with correct compileSdk
         script: |
-          echo "📝 Fixing compileSdk..."
-          # محاولة تعديل الصيغة Groovy
-          sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 34/g' android/app/build.gradle
-          # محاولة تعديل الصيغة Kotlin (إن وجدت)
-          sed -i 's/compileSdk = [0-9]*/compileSdk = 34/g' android/app/build.gradle.kts || true
-          # إضافة السطر إن لم يكن موجوداً
-          if ! grep -q "compileSdkVersion 34" android/app/build.gradle; then
-            sed -i '/android {/a \ \ \ \ compileSdkVersion 34' android/app/build.gradle
-          fi
-          echo "✅ compileSdk set to 34"
-          grep -n "compileSdk" android/app/build.gradle || echo "⚠️ No compileSdk line found!"
+          cat > android/app/build.gradle << 'EOL'
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader ->
+                  localProperties.load(reader)
+              }
+          }
 
-      - name: Fix minSdk
-        script: |
-          sed -i 's/minSdkVersion [0-9]*/minSdkVersion 21/g' android/app/build.gradle
-          echo "✅ minSdk set to 21"
+          def flutterRoot = localProperties.getProperty('flutter.sdk')
+          if (flutterRoot == null) {
+              throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
+          }
+
+          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+          if (flutterVersionCode == null) {
+              flutterVersionCode = '1'
+          }
+
+          def flutterVersionName = localProperties.getProperty('flutter.versionName')
+          if (flutterVersionName == null) {
+              flutterVersionName = '1.0'
+          }
+
+          apply plugin: 'com.android.application'
+          apply plugin: 'kotlin-android'
+          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+
+          android {
+              compileSdkVersion 34
+              ndkVersion "23.1.7779620"
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+
+              kotlinOptions {
+                  jvmTarget = '1.8'
+              }
+
+              sourceSets {
+                  main.java.srcDirs += 'src/main/kotlin'
+              }
+
+              defaultConfig {
+                  applicationId "com.example.water_tank_app"
+                  minSdkVersion 21
+                  targetSdkVersion 34
+                  versionCode flutterVersionCode.toInteger()
+                  versionName flutterVersionName
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+
+          flutter {
+              source '../..'
+          }
+
+          dependencies {
+              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+          }
+          EOL
+          echo "✅ build.gradle replaced with compileSdk 34, minSdk 21, targetSdk 34"
 
       - name: Get packages
         script: flutter pub get

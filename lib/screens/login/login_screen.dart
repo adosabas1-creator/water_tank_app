@@ -173,19 +173,64 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-      final user = await _authService.login(
-        _usernameController.text.trim(),
-        _passwordController.text,
-      );
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final username = _usernameController.text.trim();
+      final password = _passwordController.text;
+
+      final user = await _authService.login(username, password);
+
+      if (!mounted) return;
+
       setState(() => _isLoading = false);
-      if (user != null) {
-        context.read<UserProvider>().setUser(user);
-        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const DashboardScreen()));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('بيانات الدخول غير صحيحة')));
-      }
+
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('تشخيص تسجيل الدخول'),
+          content: Text(
+            user == null
+                ? 'AuthService رجع null\\n'
+                    'اسم المستخدم: $username\\n'
+                    'كلمة المرور: admin123'
+                : 'تم تسجيل الدخول بنجاح\\n'
+                    'المستخدم: ${user.username}\\n'
+                    'الاسم: ${user.fullName}\\n'
+                    'الدور: ${user.role}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      );
+    } catch (e, stackTrace) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('خطأ أثناء تسجيل الدخول'),
+          content: SingleChildScrollView(
+            child: Text('$e\\n\\n$stackTrace'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      );
     }
   }
 }

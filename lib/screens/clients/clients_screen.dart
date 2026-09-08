@@ -8,6 +8,7 @@ import '../../core/network/communication_service.dart';
 import '../../core/auth/user_provider.dart';
 import '../../core/auth/permission_service.dart';
 import '../../core/constants/permissions.dart';
+import '../statements/client_statement_screen.dart';
 
 class ClientsScreen extends StatefulWidget {
   const ClientsScreen({super.key});
@@ -176,18 +177,5 @@ class _ClientsScreenState extends State<ClientsScreen> {
 
   void _showStatement(Client client) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientStatementScreen(clientId: client.id!)));
-  }
-}
-
-class ClientStatementScreen extends StatelessWidget {
-  final int clientId;
-  const ClientStatementScreen({super.key, required this.clientId});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('كشف حساب عميل')),
-      body: const Center(child: Text('كشف الحساب سيظهر هنا')),
-    );
   }
 }

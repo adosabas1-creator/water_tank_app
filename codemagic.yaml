@@ -11,14 +11,27 @@ workflows:
           rm -rf android
           flutter create --platforms=android .
           echo "✅ Android folder created"
+          echo "📄 Showing build.gradle content (first 30 lines):"
+          head -30 android/app/build.gradle || echo "File not found!"
 
-      - name: Fix compileSdk and minSdk
+      - name: Fix compileSdk
         script: |
-          sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle || true
-          sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle || true
-          sed -i 's/compileSdk = .*/compileSdk = 34/g' android/app/build.gradle.kts || true
-          sed -i 's/minSdk = .*/minSdk = 21/g' android/app/build.gradle.kts || true
-          echo "✅ compileSdk=34, minSdk=21"
+          echo "📝 Fixing compileSdk..."
+          # محاولة تعديل الصيغة Groovy
+          sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 34/g' android/app/build.gradle
+          # محاولة تعديل الصيغة Kotlin (إن وجدت)
+          sed -i 's/compileSdk = [0-9]*/compileSdk = 34/g' android/app/build.gradle.kts || true
+          # إضافة السطر إن لم يكن موجوداً
+          if ! grep -q "compileSdkVersion 34" android/app/build.gradle; then
+            sed -i '/android {/a \ \ \ \ compileSdkVersion 34' android/app/build.gradle
+          fi
+          echo "✅ compileSdk set to 34"
+          grep -n "compileSdk" android/app/build.gradle || echo "⚠️ No compileSdk line found!"
+
+      - name: Fix minSdk
+        script: |
+          sed -i 's/minSdkVersion [0-9]*/minSdkVersion 21/g' android/app/build.gradle
+          echo "✅ minSdk set to 21"
 
       - name: Get packages
         script: flutter pub get

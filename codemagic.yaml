@@ -6,35 +6,19 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      # الخطوة 1: إنشاء مجلد android باستخدام flutter create (الطريقة الرسمية)
-      - name: Create fresh android folder
+      - name: Fix compileSdk and minSdk
         script: |
-          rm -rf android  # حذف المجلد القديم (إن وجد)
-          flutter create . --platforms=android  # إنشاء مجلد android جديد
-          echo "✅ Android folder recreated successfully"
-
-      # الخطوة 2: تعديل compileSdkVersion إلى 36 و targetSdkVersion إلى 36
-      - name: Update compileSdkVersion
-        script: |
-          # تغيير compileSdkVersion من 33 إلى 36
-          sed -i 's/compileSdkVersion 33/compileSdkVersion 36/g' android/app/build.gradle
-          # تغيير targetSdkVersion إن وجد (وإلا نضيفه)
-          if grep -q "targetSdkVersion" android/app/build.gradle; then
-            sed -i 's/targetSdkVersion 33/targetSdkVersion 36/g' android/app/build.gradle
-          else
-            sed -i '/defaultConfig {/a \        targetSdkVersion 36' android/app/build.gradle
-          fi
-          echo "✅ compileSdkVersion and targetSdkVersion set to 36"
-
+          sed -i 's/compileSdkVersion .*/compileSdkVersion 34/g' android/app/build.gradle || true
+          sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle || true
+          sed -i 's/compileSdk = .*/compileSdk = 34/g' android/app/build.gradle.kts || true
+          sed -i 's/minSdk = .*/minSdk = 21/g' android/app/build.gradle.kts || true
+          echo "✅ compileSdk=34, minSdk=21"
       - name: Get packages
         script: flutter pub get
-
       - name: Build APK
         script: flutter build apk --release
-
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
-
     publishing:
       email:
         recipients:

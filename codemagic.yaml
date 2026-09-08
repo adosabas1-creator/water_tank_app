@@ -6,23 +6,54 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Create android folder
+      - name: Create android folder with Groovy DSL
         script: |
           rm -rf android
           flutter create --platforms=android --android-language=java .
           echo "✅ Android folder created"
-          echo "📂 Contents of android/ :"
-          ls -la android/
-          echo "📂 Contents of android/app/ :"
-          ls -la android/app/ || echo "⚠️ android/app/ not found!"
+          # حذف جميع ملفات Kotlin DSL (.kts) نهائياً
+          find android -name "*.kts" -type f -delete
+          echo "🗑️ All .kts files deleted"
 
-      - name: Ensure build.gradle exists with correct SDK versions
+      - name: Create Groovy build.gradle files
         script: |
-          # إذا لم يكن الملف موجوداً، ننشئه يدوياً
-          if [ ! -f "android/app/build.gradle" ]; then
-            echo "⚠️ build.gradle not found, creating it manually..."
-            mkdir -p android/app
-            cat > android/app/build.gradle << 'EOL'
+          # إنشاء android/build.gradle (المشروع الرئيسي)
+          cat > android/build.gradle << 'EOL'
+          buildscript {
+              ext.kotlin_version = '1.9.0'
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.4.2'
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+              }
+          }
+
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.buildDir = '../build'
+          subprojects {
+              project.buildDir = "${rootProject.buildDir}/${project.name}"
+          }
+          subprojects {
+              project.evaluationDependsOn(':app')
+          }
+
+          tasks.register('clean', Delete) {
+              delete rootProject.buildDir
+          }
+          EOL
+
+          # إنشاء android/app/build.gradle (التطبيق)
+          cat > android/app/build.gradle << 'EOL'
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
           if (localPropertiesFile.exists()) {
@@ -90,16 +121,22 @@ workflows:
               implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
           }
           EOL
-            echo "✅ build.gradle created manually with compileSdk 34"
-          else
-            echo "✅ build.gradle already exists, updating SDK versions..."
-            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 34/g' android/app/build.gradle
-            sed -i 's/minSdkVersion [0-9]*/minSdkVersion 21/g' android/app/build.gradle
-            sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 34/g' android/app/build.gradle
-          fi
 
-          echo "📄 First 20 lines of build.gradle:"
-          head -20 android/app/build.gradle
+          echo "✅ Groovy build.gradle files created (compileSdk=34, minSdk=21, targetSdk=34)"
+
+      - name: Ensure settings.gradle exists
+        script: |
+          cat > android/settings.gradle << 'EOL'
+          include ':app'
+          def localPropertiesFile = new File(rootProject.projectDir, "local.properties")
+          def properties = new Properties()
+          assert localPropertiesFile.exists()
+          localPropertiesFile.withReader("UTF-8") { reader -> properties.load(reader) }
+          def flutterSdkPath = properties.getProperty("flutter.sdk")
+          assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+          apply from: "$flutterSdkPath/packages/flutter_tools/gradle/app_plugin_loader.gradle"
+          EOL
+          echo "✅ settings.gradle created"
 
       - name: Get packages
         script: flutter pub get

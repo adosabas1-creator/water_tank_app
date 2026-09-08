@@ -26,6 +26,7 @@ class AuthService {
     required String password,
     required String fullName,
     required String role,
+    int? driverId,
     Map<String, bool>? permissions,
   }) async {
     final db = await _dbHelper.database;
@@ -35,14 +36,31 @@ class AuthService {
       passwordHash: _hashPassword(password),
       fullName: fullName,
       role: role,
-      permissions: permissions ?? DefaultPermissions.salesEmployee(),
+      driverId: driverId,
+      permissions: permissions ?? _defaultPermissionsForRole(role),
       createdAt: now,
       updatedAt: now,
     );
     return await db.insert('users', user.toMap());
   }
 
-  Future<void> updatePermissions(int userId, Map<String, bool> newPermissions) async {
+  Future<void> updateDriver(int userId, int? driverId) async {
+    final db = await _dbHelper.database;
+
+    await db.update(
+      'users',
+      {
+        'driver_id': driverId,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ?',
+      whereArgs: [userId],
+    );
+  }
+
+  Future<void> updatePermissions(
+      int userId, Map<String, bool> newPermissions) async {
     final db = await _dbHelper.database;
     await db.update(
       'users',
@@ -65,5 +83,21 @@ class AuthService {
     final bytes = utf8.encode(password);
     final digest = sha256.convert(bytes);
     return digest.toString();
+  }
+
+  Map<String, bool> _defaultPermissionsForRole(String role) {
+    switch (role) {
+      case 'admin':
+        return DefaultPermissions.admin();
+
+      case 'deputy_manager':
+        return DefaultPermissions.deputyManager();
+
+      case 'driver':
+        return DefaultPermissions.driver();
+
+      default:
+        return DefaultPermissions.driver();
+    }
   }
 }

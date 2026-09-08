@@ -34,6 +34,7 @@ class DatabaseHelper {
         password_hash TEXT NOT NULL,
         full_name TEXT NOT NULL,
         role TEXT NOT NULL,
+        driver_id INTEGER,
         permissions TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -223,6 +224,17 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // مستقبلًا يمكن إضافة ترقيات تدريجية
+    if (oldVersion < 2) {
+      final columns = await db.rawQuery('PRAGMA table_info(users)');
+      final hasDriverId = columns.any(
+        (column) => column['name'] == 'driver_id',
+      );
+
+      if (!hasDriverId) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN driver_id INTEGER',
+        );
+      }
+    }
   }
 }

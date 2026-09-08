@@ -6,6 +6,7 @@ class User {
   final String passwordHash;
   final String fullName;
   final String role;
+  final int? driverId;
   Map<String, bool> permissions;
   final String createdAt;
   final String updatedAt;
@@ -16,6 +17,7 @@ class User {
     required this.passwordHash,
     required this.fullName,
     required this.role,
+    this.driverId,
     required this.permissions,
     required this.createdAt,
     required this.updatedAt,
@@ -37,6 +39,7 @@ class User {
       'password_hash': passwordHash,
       'full_name': fullName,
       'role': role,
+      'driver_id': driverId,
       'permissions': permissionsToJson(permissions),
       'created_at': createdAt,
       'updated_at': updatedAt,
@@ -52,6 +55,7 @@ class User {
       passwordHash: map['password_hash'],
       fullName: map['full_name'],
       role: map['role'],
+      driverId: map['driver_id'],
       permissions: permissionsFromJson(map['permissions']),
       createdAt: map['created_at'],
       updatedAt: map['updated_at'],

@@ -2,10 +2,17 @@ workflows:
   android-build:
     name: Build Android APK
     max_build_duration: 60
-    instance_type: mac_mini_m2
+    instance_type: linux
     environment:
       flutter: stable
     scripts:
+      - name: Setup Java 17
+        script: |
+          apt-get update && apt-get install -y openjdk-17-jdk
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+          echo "JAVA_HOME set to $JAVA_HOME"
+          java -version
+
       - name: Create Android folder structure
         script: |
           rm -rf android
@@ -46,7 +53,7 @@ workflows:
           </manifest>
           EOL
 
-      - name: Write MainActivity.kt (v2)
+      - name: Write MainActivity.kt
         script: |
           cat > android/app/src/main/kotlin/com/example/water_tank_app/MainActivity.kt << 'EOL'
           package com.example.water_tank_app
@@ -54,7 +61,7 @@ workflows:
           class MainActivity: FlutterActivity()
           EOL
 
-      - name: Write styles.xml
+      - name: Write styles.xml and launch_background
         script: |
           cat > android/app/src/main/res/values/styles.xml << 'EOL'
           <?xml version="1.0" encoding="utf-8"?>
@@ -67,9 +74,6 @@ workflows:
               </style>
           </resources>
           EOL
-
-      - name: Write launch_background.xml
-        script: |
           cat > android/app/src/main/res/drawable/launch_background.xml << 'EOL'
           <?xml version="1.0" encoding="utf-8"?>
           <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
@@ -77,7 +81,7 @@ workflows:
           </layer-list>
           EOL
 
-      - name: Write build.gradle (project)
+      - name: Write build.gradle (project) with AGP 8.1.0
         script: |
           cat > android/build.gradle << 'EOL'
           buildscript {
@@ -86,8 +90,8 @@ workflows:
                   mavenCentral()
               }
               dependencies {
-                  classpath 'com.android.tools.build:gradle:7.4.2'
-                  classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0'
+                  classpath 'com.android.tools.build:gradle:8.1.0'
+                  classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20'
               }
           }
           allprojects {
@@ -127,11 +131,11 @@ workflows:
               compileSdkVersion 34
               ndkVersion "23.1.7779620"
               compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_1_8
-                  targetCompatibility JavaVersion.VERSION_1_8
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
               }
               kotlinOptions {
-                  jvmTarget = '1.8'
+                  jvmTarget = '17'
               }
               defaultConfig {
                   applicationId "com.example.water_tank_app"
@@ -152,7 +156,7 @@ workflows:
           }
           EOL
 
-      - name: Write settings.gradle
+      - name: Write settings.gradle with pluginManagement
         script: |
           cat > android/settings.gradle << 'EOL'
           pluginManagement {
@@ -179,8 +183,8 @@ workflows:
       - name: Write local.properties
         script: |
           cat > android/local.properties << 'EOL'
-          sdk.dir=/Users/builder/programs/flutter
-          flutter.sdk=/Users/builder/programs/flutter
+          sdk.dir=/usr/local/android-sdk
+          flutter.sdk=/usr/local/flutter
           EOL
 
       - name: Write gradle.properties
@@ -191,17 +195,19 @@ workflows:
           android.enableJetifier=true
           EOL
 
-      - name: Write gradle-wrapper.properties
+      - name: Write gradle-wrapper.properties with Gradle 8.4
         script: |
           cat > android/gradle/wrapper/gradle-wrapper.properties << 'EOL'
-          distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-all.zip
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-all.zip
           EOL
 
       - name: Get packages
         script: flutter pub get
 
       - name: Build APK
-        script: flutter build apk --release
+        script: |
+          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+          flutter build apk --release
 
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk

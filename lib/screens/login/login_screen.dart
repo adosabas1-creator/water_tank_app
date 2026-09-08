@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/auth/auth_service.dart';
+import '../../core/database/database_helper.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 import '../../core/auth/user_provider.dart';
 import '../../core/constants/app_constants.dart';
 import '../../models/user.dart';
@@ -77,6 +80,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     validator: (v) => v!.isEmpty ? 'أدخل كلمة المرور' : null,
                   ),
                   const SizedBox(height: 24),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _checkDatabase,
+                    child: const Text('فحص قاعدة البيانات'),
+                  ),
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -97,6 +105,71 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
+  }
+
+
+  Future<void> _checkDatabase() async {
+    try {
+      final db = await DatabaseHelper().database;
+
+      final users = await db.query('users');
+
+      final expectedHash =
+          sha256.convert(utf8.encode('admin123')).toString();
+
+      final admins = users.where((u) => u['username'] == 'admin').toList();
+
+      String message;
+
+      if (admins.isEmpty) {
+        message = 'قاعدة البيانات تعمل، لكن المستخدم admin غير موجود.\n'
+            'عدد المستخدمين: ${users.length}';
+      } else {
+        final admin = admins.first;
+        final storedHash = admin['password_hash'];
+
+        final passwordMatches = storedHash == expectedHash;
+
+        message = 'قاعدة البيانات تعمل.\n'
+            'عدد المستخدمين: ${users.length}\n'
+            'admin موجود: نعم\n'
+            'كلمة المرور admin123: '
+            '${passwordMatches ? 'مطابقة' : 'غير مطابقة'}\n'
+            'is_deleted: ${admin['is_deleted']}';
+      }
+
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('نتيجة الفحص'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('خطأ قاعدة البيانات'),
+          content: Text('$e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Future<void> _login() async {

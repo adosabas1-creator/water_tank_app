@@ -6,15 +6,13 @@ workflows:
     environment:
       flutter: stable
     scripts:
-      - name: Create android folder with Groovy DSL
+      - name: Delete old android folder
         script: |
           rm -rf android
-          flutter create --platforms=android --android-language=java .
-          echo "✅ Android folder created"
-          find android -name "*.kts" -type f -delete
-          echo "🗑️ All .kts files deleted"
+          mkdir -p android/app/src/main
+          echo "✅ Empty android folder created"
 
-      - name: Create minimal Gradle files
+      - name: Write build.gradle (project)
         script: |
           cat > android/build.gradle << 'EOL'
           buildscript {
@@ -27,27 +25,19 @@ workflows:
                   classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0'
               }
           }
-
           allprojects {
               repositories {
                   google()
                   mavenCentral()
               }
           }
-
-          rootProject.buildDir = '../build'
-          subprojects {
-              project.buildDir = "${rootProject.buildDir}/${project.name}"
-          }
-          subprojects {
-              project.evaluationDependsOn(':app')
-          }
-
           tasks.register('clean', Delete) {
               delete rootProject.buildDir
           }
           EOL
 
+      - name: Write app/build.gradle
+        script: |
           cat > android/app/build.gradle << 'EOL'
           plugins {
               id 'com.android.application'
@@ -71,20 +61,13 @@ workflows:
           android {
               compileSdkVersion 34
               ndkVersion "23.1.7779620"
-
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_1_8
                   targetCompatibility JavaVersion.VERSION_1_8
               }
-
               kotlinOptions {
                   jvmTarget = '1.8'
               }
-
-              sourceSets {
-                  main.java.srcDirs += 'src/main/kotlin'
-              }
-
               defaultConfig {
                   applicationId "com.example.water_tank_app"
                   minSdkVersion 21
@@ -92,7 +75,6 @@ workflows:
                   versionCode 1
                   versionName "1.0"
               }
-
               buildTypes {
                   release {
                       signingConfig signingConfigs.debug
@@ -105,6 +87,8 @@ workflows:
           }
           EOL
 
+      - name: Write settings.gradle
+        script: |
           cat > android/settings.gradle << 'EOL'
           pluginManagement {
               def flutterSdkPath = {
@@ -127,7 +111,20 @@ workflows:
           include ":app"
           EOL
 
-          echo "✅ Minimal Gradle files created"
+      - name: Write local.properties
+        script: |
+          cat > android/local.properties << 'EOL'
+          sdk.dir=/Users/builder/programs/flutter
+          flutter.sdk=/Users/builder/programs/flutter
+          EOL
+
+      - name: Write gradle.properties
+        script: |
+          cat > android/gradle.properties << 'EOL'
+          org.gradle.jvmargs=-Xmx4g
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOL
 
       - name: Get packages
         script: flutter pub get

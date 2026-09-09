@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import 'package:provider/provider.dart';
 import '../../models/client.dart';
 import '../../models/operation_log.dart';
@@ -34,9 +35,12 @@ class _ClientsScreenState extends State<ClientsScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>().currentUser;
-    final canAdd = PermissionService.hasPermission(user, PermissionKeys.clientsAdd);
-    final canEdit = PermissionService.hasPermission(user, PermissionKeys.clientsEdit);
-    final canDelete = PermissionService.hasPermission(user, PermissionKeys.clientsDelete);
+    final canAdd =
+        PermissionService.hasPermission(user, PermissionKeys.clientsAdd);
+    final canEdit =
+        PermissionService.hasPermission(user, PermissionKeys.clientsEdit);
+    final canDelete =
+        PermissionService.hasPermission(user, PermissionKeys.clientsDelete);
     return Scaffold(
       appBar: AppBar(title: const Text('العملاء')),
       body: FutureBuilder<List<Client>>(
@@ -58,10 +62,22 @@ class _ClientsScreenState extends State<ClientsScreen> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(icon: const Icon(Icons.call), onPressed: () => CommunicationService.callPhone(client.phone ?? '')),
-                    IconButton(icon: const Icon(Icons.chat), onPressed: () => CommunicationService.openWhatsApp(client.phone ?? '', 'مرحباً ${client.name}')),
-                    if (canEdit) IconButton(icon: const Icon(Icons.edit), onPressed: () => _showClientDialog(client)),
-                    if (canDelete) IconButton(icon: const Icon(Icons.delete), onPressed: () => _confirmDelete(client)),
+                    IconButton(
+                        icon: const Icon(Icons.call),
+                        onPressed: () =>
+                            CommunicationService.callPhone(client.phone ?? '')),
+                    IconButton(
+                        icon: const Icon(Icons.chat),
+                        onPressed: () => CommunicationService.openWhatsApp(
+                            client.phone ?? '', 'مرحباً ${client.name}')),
+                    if (canEdit)
+                      IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () => _showClientDialog(client)),
+                    if (canDelete)
+                      IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: () => _confirmDelete(client)),
                   ],
                 ),
                 onTap: () => _showStatement(client),
@@ -70,10 +86,12 @@ class _ClientsScreenState extends State<ClientsScreen> {
           );
         },
       ),
-      floatingActionButton: canAdd ? FloatingActionButton(
-        onPressed: () => _showClientDialog(null),
-        child: const Icon(Icons.add),
-      ) : null,
+      floatingActionButton: canAdd
+          ? FloatingActionButton(
+              onPressed: () => _showClientDialog(null),
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
 
@@ -88,13 +106,21 @@ class _ClientsScreenState extends State<ClientsScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'اسم العميل')),
-            TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'الهاتف')),
-            TextField(controller: addressCtrl, decoration: const InputDecoration(labelText: 'العنوان')),
+            TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'اسم العميل')),
+            TextField(
+                controller: phoneCtrl,
+                decoration: const InputDecoration(labelText: 'الهاتف')),
+            TextField(
+                controller: addressCtrl,
+                decoration: const InputDecoration(labelText: 'العنوان')),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء')),
           ElevatedButton(
             onPressed: () async {
               final now = DateTime.now().toIso8601String();
@@ -104,6 +130,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
               final user = dialogContext.read<UserProvider>().currentUser;
               final client = Client(
                 id: existing?.id,
+                syncId: existing?.syncId ?? const Uuid().v4(),
                 name: nameCtrl.text.trim(),
                 phone: phoneCtrl.text.trim(),
                 address: addressCtrl.text.trim(),
@@ -155,7 +182,9 @@ class _ClientsScreenState extends State<ClientsScreen> {
         title: const Text('تأكيد الحذف'),
         content: Text('هل تريد حذف ${client.name}؟'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء')),
           ElevatedButton(
             onPressed: () async {
               if (!mounted) return;
@@ -187,6 +216,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   void _showStatement(Client client) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ClientStatementScreen(clientId: client.id!)));
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ClientStatementScreen(clientId: client.id!)));
   }
 }

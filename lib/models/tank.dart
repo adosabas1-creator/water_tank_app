@@ -1,5 +1,6 @@
 class Tank {
   final int? id;
+  final String syncId;
   final String tankNumber;
   final int capacityUnits;
   final int? driverId;
@@ -11,6 +12,7 @@ class Tank {
 
   Tank({
     this.id,
+    required this.syncId,
     required this.tankNumber,
     required this.capacityUnits,
     this.driverId,
@@ -24,6 +26,7 @@ class Tank {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
       'tank_number': tankNumber,
       'capacity_units': capacityUnits,
       'driver_id': driverId,
@@ -38,6 +41,7 @@ class Tank {
   factory Tank.fromMap(Map<String, dynamic> map) {
     return Tank(
       id: map['id'],
+      syncId: map['sync_id'] as String,
       tankNumber: map['tank_number'],
       capacityUnits: map['capacity_units'],
       driverId: map['driver_id'],

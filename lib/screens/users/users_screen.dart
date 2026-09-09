@@ -1,12 +1,14 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/user.dart';
 import '../../core/auth/auth_service.dart';
 import '../../core/constants/permissions.dart';
 import '../../services/driver_service.dart';
 import '../../models/driver.dart';
+import '../../services/backup_service.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -18,6 +20,7 @@ class UsersScreen extends StatefulWidget {
 class _UsersScreenState extends State<UsersScreen> {
   final AuthService _authService = AuthService();
   final DriverService _driverService = DriverService();
+  final BackupService _backupService = BackupService();
 
   late Future<List<User>> _future;
 
@@ -50,6 +53,59 @@ class _UsersScreenState extends State<UsersScreen> {
             onPressed: _showAddUserDialog,
             tooltip: 'إضافة مستخدم',
             icon: const Icon(Icons.person_add),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'النسخ الاحتياطي',
+            onSelected: (value) {
+              switch (value) {
+                case 'backup':
+                  _createBackup();
+                  break;
+                case 'restore':
+                  _restoreBackup();
+                  break;
+                case 'email':
+                  _sendBackupByEmail();
+                  break;
+                case 'settings':
+                  _showBackupSettings();
+                  break;
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'backup',
+                child: ListTile(
+                  leading: Icon(Icons.backup),
+                  title: Text('نسخ احتياطي الآن'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'email',
+                child: ListTile(
+                  leading: Icon(Icons.email_outlined),
+                  title: Text('إرسال النسخة إلى البريد'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'restore',
+                child: ListTile(
+                  leading: Icon(Icons.restore),
+                  title: Text('استعادة نسخة احتياطية'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings_backup_restore),
+                  title: Text('إعدادات النسخ التلقائي'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -148,6 +204,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Future<void> _showAddUserDialog() async {
     final usernameCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
     final fullNameCtrl = TextEditingController();
 
@@ -190,6 +247,7 @@ class _UsersScreenState extends State<UsersScreen> {
                   if (isSaving) return;
 
                   final username = usernameCtrl.text.trim();
+                  final email = emailCtrl.text.trim();
                   final password = passwordCtrl.text;
                   final fullName = fullNameCtrl.text.trim();
 
@@ -237,6 +295,7 @@ class _UsersScreenState extends State<UsersScreen> {
                     await _authService.createUser(
                       username: username,
                       password: password,
+                      firebaseEmail: email,
                       fullName: fullName,
                       role: role,
                       driverId: role == 'driver' ? selectedDriverId : null,
@@ -282,6 +341,13 @@ class _UsersScreenState extends State<UsersScreen> {
                           controller: usernameCtrl,
                           decoration: const InputDecoration(
                             labelText: 'اسم المستخدم *',
+                          ),
+                        ),
+                        TextField(
+                          controller: emailCtrl,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'البريد الإلكتروني لـ Firebase (اختياري)',
                           ),
                         ),
                         TextField(
@@ -502,6 +568,19 @@ class _UsersScreenState extends State<UsersScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     ListTile(
+                      leading: const Icon(Icons.lock_reset),
+                      title: const Text('تغيير كلمة المرور'),
+                      subtitle: const Text(
+                        'تعيين كلمة مرور جديدة لهذا المستخدم',
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _changeUserPassword(user);
+                      },
+                    ),
+                    const Divider(),
+                    ListTile(
                       leading: const Icon(Icons.key),
                       title: const Text('إعداد رمز الاسترداد'),
                       subtitle: const Text(
@@ -680,6 +759,131 @@ class _UsersScreenState extends State<UsersScreen> {
     );
   }
 
+  Future<void> _changeUserPassword(User user) async {
+    final passwordCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+
+    try {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          bool isSaving = false;
+
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              Future<void> save() async {
+                final password = passwordCtrl.text;
+                final confirm = confirmCtrl.text;
+
+                if (password.length < 6) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                if (password != confirm) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('كلمتا المرور غير متطابقتين'),
+                    ),
+                  );
+                  return;
+                }
+
+                setDialogState(() {
+                  isSaving = true;
+                });
+
+                try {
+                  final updated = await _authService.updateUserPassword(
+                    userId: user.id!,
+                    newPassword: password,
+                  );
+
+                  if (!context.mounted) return;
+                  Navigator.pop(context, updated);
+                } catch (e) {
+                  if (!context.mounted) return;
+
+                  setDialogState(() {
+                    isSaving = false;
+                  });
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('حدث خطأ أثناء تغيير كلمة المرور:\n$e'),
+                    ),
+                  );
+                }
+              }
+
+              return AlertDialog(
+                title: Text('تغيير كلمة مرور ${user.fullName}'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: passwordCtrl,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'كلمة المرور الجديدة',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: confirmCtrl,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'تأكيد كلمة المرور',
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: isSaving
+                        ? null
+                        : () => Navigator.pop(context, false),
+                    child: const Text('إلغاء'),
+                  ),
+                  FilledButton(
+                    onPressed: isSaving ? null : save,
+                    child: isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text('حفظ'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (result == true && mounted) {
+        _refresh();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تغيير كلمة المرور بنجاح'),
+          ),
+        );
+      }
+    } finally {
+      passwordCtrl.dispose();
+      confirmCtrl.dispose();
+    }
+  }
+
   Widget _buildCheckbox(
     StateSetter setState,
     User user,
@@ -696,4 +900,180 @@ class _UsersScreenState extends State<UsersScreen> {
       },
     );
   }
+
+  Future<void> _createBackup() async {
+    try {
+      final path = await _backupService.createManualBackup();
+
+      if (!mounted || path == null) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إنشاء النسخة الاحتياطية بنجاح:\n$path'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تعذر إنشاء النسخة الاحتياطية:\n$e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendBackupByEmail() async {
+    try {
+      final path = await _backupService.createManualBackup();
+
+      if (!mounted || path == null) return;
+
+      await const MethodChannel(
+        'com.alborai.water_tank_app/backup',
+      ).invokeMethod(
+        'sendBackupByEmail',
+        <String, dynamic>{
+          'filePath': path,
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تعذر تجهيز النسخة للإرسال بالبريد:\n$e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _restoreBackup() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('استعادة نسخة احتياطية'),
+        content: const Text(
+          'سيتم استبدال قاعدة البيانات الحالية بالنسخة المختارة. '
+          'هل تريد المتابعة؟',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('استعادة'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final restored = await _backupService.restoreBackup();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            restored
+                ? 'تمت استعادة النسخة الاحتياطية بنجاح. أعد تشغيل التطبيق.'
+                : 'تم إلغاء الاستعادة.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تعذر استعادة النسخة الاحتياطية:\n$e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showBackupSettings() async {
+    var enabled = await _backupService.isAutomaticBackupEnabled();
+    var frequency = await _backupService.getAutomaticBackupFrequency();
+
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('إعدادات النسخ التلقائي'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('تفعيل النسخ التلقائي'),
+                    value: enabled,
+                    onChanged: (value) async {
+                      await _backupService.setAutomaticBackupEnabled(value);
+                      setDialogState(() {
+                        enabled = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: frequency,
+                    decoration: const InputDecoration(
+                      labelText: 'التكرار',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'daily',
+                        child: Text('يومي'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'weekly',
+                        child: Text('أسبوعي'),
+                      ),
+                    ],
+                    onChanged: !enabled
+                        ? null
+                        : (value) async {
+                            if (value == null) return;
+
+                            await _backupService
+                                .setAutomaticBackupFrequency(value);
+
+                            setDialogState(() {
+                              frequency = value;
+                            });
+                          },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'يتم الاحتفاظ بآخر 7 نسخ تلقائية.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('إغلاق'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+
 }

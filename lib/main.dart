@@ -23,7 +23,7 @@ import 'services/backup_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  _initializeFirebase();
+  await _initializeFirebase();
   await _initializeDatabase();
   await _runAutomaticBackup();
 

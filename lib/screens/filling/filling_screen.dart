@@ -1,3 +1,4 @@
+import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -149,9 +150,7 @@ class _FillingScreenState extends State<FillingScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           title: Text(
-            existing == null
-                ? 'إضافة عملية تعبئة'
-                : 'تعديل عملية تعبئة',
+            existing == null ? 'إضافة عملية تعبئة' : 'تعديل عملية تعبئة',
           ),
           content: SingleChildScrollView(
             child: Column(
@@ -244,12 +243,10 @@ class _FillingScreenState extends State<FillingScreen> {
 
                 final employeeText = employeeIdCtrl.text.trim();
 
-                final employeeId = employeeText.isEmpty
-                    ? null
-                    : int.tryParse(employeeText);
+                final employeeId =
+                    employeeText.isEmpty ? null : int.tryParse(employeeText);
 
-                final operationDate =
-                    operationDateCtrl.text.trim();
+                final operationDate = operationDateCtrl.text.trim();
 
                 if (tankId == null || tankId <= 0) {
                   _showDialogError(
@@ -299,8 +296,7 @@ class _FillingScreenState extends State<FillingScreen> {
                   return;
                 }
 
-                final user =
-                    context.read<UserProvider>().currentUser;
+                final user = context.read<UserProvider>().currentUser;
 
                 if (user?.id == null) {
                   _showDialogError(
@@ -314,10 +310,10 @@ class _FillingScreenState extends State<FillingScreen> {
 
                 final operation = FillingOperation(
                   id: existing?.id,
-                  operationNumber:
-                      operationNumberCtrl.text.trim().isEmpty
-                          ? null
-                          : operationNumberCtrl.text.trim(),
+                  syncId: existing?.syncId ?? const Uuid().v4(),
+                  operationNumber: operationNumberCtrl.text.trim().isEmpty
+                      ? null
+                      : operationNumberCtrl.text.trim(),
                   tankId: tankId,
                   supplierId: supplierId,
                   units: units,

@@ -1,5 +1,6 @@
 class Driver {
   final int? id;
+  final String syncId;
   final String name;
   final String? phone;
   final String? licenseNumber;
@@ -11,6 +12,7 @@ class Driver {
 
   Driver({
     this.id,
+    required this.syncId,
     required this.name,
     this.phone,
     this.licenseNumber,
@@ -24,6 +26,7 @@ class Driver {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
       'name': name,
       'phone': phone,
       'license_number': licenseNumber,
@@ -38,6 +41,7 @@ class Driver {
   factory Driver.fromMap(Map<String, dynamic> map) {
     return Driver(
       id: map['id'],
+      syncId: map['sync_id'] as String,
       name: map['name'],
       phone: map['phone'],
       licenseNumber: map['license_number'],

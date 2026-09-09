@@ -1,3 +1,4 @@
+import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -109,16 +110,16 @@ class _SalesScreenState extends State<SalesScreen> {
                         : 'بيع #${sale.id}',
                   ),
                   subtitle: Text(
-                          'العميل: ${sale.clientId} | '
-                          'الصهريج: ${sale.tankId}\n'
-                          'الوحدات: ${sale.units} | '
-                          'الإجمالي: ${sale.totalAmount.toStringAsFixed(2)} ريال\n'
-                          'سجّلها: ${_userName(sale.createdBy)}\n'
-                          'السائق: ${_driverName(sale.driverId)}\n'
-                          'التاريخ: ${sale.saleDate} | '
-                          'الحالة: ${_paymentStatusText(sale.paymentStatus)}',
-                        ),
-                        isThreeLine: true,
+                    'العميل: ${sale.clientId} | '
+                    'الصهريج: ${sale.tankId}\n'
+                    'الوحدات: ${sale.units} | '
+                    'الإجمالي: ${sale.totalAmount.toStringAsFixed(2)} ريال\n'
+                    'سجّلها: ${_userName(sale.createdBy)}\n'
+                    'السائق: ${_driverName(sale.driverId)}\n'
+                    'التاريخ: ${sale.saleDate} | '
+                    'الحالة: ${_paymentStatusText(sale.paymentStatus)}',
+                  ),
+                  isThreeLine: true,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -439,6 +440,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
                     final sale = Sale(
                       id: existing?.id,
+                      syncId: existing?.syncId ?? const Uuid().v4(),
                       saleNumber: saleNumberCtrl.text.trim().isEmpty
                           ? null
                           : saleNumberCtrl.text.trim(),

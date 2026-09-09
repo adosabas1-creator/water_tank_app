@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../../models/tank.dart';
 import '../../services/tank_service.dart';
 
@@ -160,8 +161,7 @@ class _TanksScreenState extends State<TanksScreen> {
             ElevatedButton(
               onPressed: () async {
                 final tankNumber = tankNumberCtrl.text.trim();
-                final capacity =
-                    int.tryParse(capacityCtrl.text.trim());
+                final capacity = int.tryParse(capacityCtrl.text.trim());
                 final driverIdText = driverIdCtrl.text.trim();
                 final driverId =
                     driverIdText.isEmpty ? null : int.tryParse(driverIdText);
@@ -197,6 +197,7 @@ class _TanksScreenState extends State<TanksScreen> {
 
                 final tank = Tank(
                   id: existing?.id,
+                  syncId: existing?.syncId ?? const Uuid().v4(),
                   tankNumber: tankNumber,
                   capacityUnits: capacity,
                   driverId: driverId,

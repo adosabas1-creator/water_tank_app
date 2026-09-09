@@ -1,5 +1,6 @@
 class Expense {
   final int? id;
+  final String syncId;
   final String expenseType;
   final double amount;
   final String expenseDate;
@@ -12,6 +13,7 @@ class Expense {
 
   Expense({
     this.id,
+    required this.syncId,
     required this.expenseType,
     required this.amount,
     required this.expenseDate,
@@ -26,6 +28,7 @@ class Expense {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
       'expense_type': expenseType,
       'amount': amount,
       'expense_date': expenseDate,
@@ -41,6 +44,7 @@ class Expense {
   factory Expense.fromMap(Map<String, dynamic> map) {
     return Expense(
       id: map['id'],
+      syncId: map['sync_id'] as String,
       expenseType: map['expense_type'],
       amount: map['amount'],
       expenseDate: map['expense_date'],

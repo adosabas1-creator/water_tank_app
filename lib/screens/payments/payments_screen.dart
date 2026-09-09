@@ -1,3 +1,4 @@
+import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -100,6 +101,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
                 if (payment == null) {
                   final newPayment = Payment(
+                               syncId: const Uuid().v4(),
                     paymentType: paymentType,
                     referenceId: referenceId,
                     amount: amount,
@@ -117,6 +119,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                   await _service.addPayment(newPayment);
                 } else {
                   final updatedPayment = Payment(
+                    syncId: payment.syncId,
                     id: payment.id,
                     paymentType: paymentType,
                     referenceId: referenceId,

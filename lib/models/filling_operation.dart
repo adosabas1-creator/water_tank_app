@@ -1,5 +1,6 @@
 class FillingOperation {
   final int? id;
+  final String syncId;
   final String? operationNumber;
   final int tankId;
   final int supplierId;
@@ -16,6 +17,7 @@ class FillingOperation {
 
   FillingOperation({
     this.id,
+    required this.syncId,
     this.operationNumber,
     required this.tankId,
     required this.supplierId,
@@ -34,6 +36,7 @@ class FillingOperation {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
       'operation_number': operationNumber,
       'tank_id': tankId,
       'supplier_id': supplierId,
@@ -53,6 +56,7 @@ class FillingOperation {
   factory FillingOperation.fromMap(Map<String, dynamic> map) {
     return FillingOperation(
       id: map['id'],
+      syncId: map['sync_id'] as String,
       operationNumber: map['operation_number'],
       tankId: map['tank_id'],
       supplierId: map['supplier_id'],

@@ -24,9 +24,11 @@ class ExpenseService {
   Future<void> updateExpense(Expense expense) async {
     final db = await _dbHelper.database;
 
+    final data = expense.toMap();
+    data['is_synced'] = 0;
     await db.update(
       'expenses',
-      expense.toMap(),
+      data,
       where: 'id = ?',
       whereArgs: [expense.id],
     );
@@ -39,6 +41,7 @@ class ExpenseService {
       'expenses',
       {
         'is_deleted': 1,
+        'is_synced': 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',

@@ -2,6 +2,9 @@ import 'dart:convert';
 
 class User {
   final int? id;
+  final String syncId;
+  final String? firebaseUid;
+  final String? firebaseEmail;
   final String username;
   final String passwordHash;
   final String? recoveryCodeHash;
@@ -11,9 +14,13 @@ class User {
   Map<String, bool> permissions;
   final String createdAt;
   final String updatedAt;
+  final bool mustChangePassword;
 
   User({
     this.id,
+    required this.syncId,
+    this.firebaseUid,
+    this.firebaseEmail,
     required this.username,
     required this.passwordHash,
     this.recoveryCodeHash,
@@ -23,6 +30,7 @@ class User {
     required this.permissions,
     required this.createdAt,
     required this.updatedAt,
+    this.mustChangePassword = false,
   });
 
   static Map<String, bool> permissionsFromJson(String json) {
@@ -37,6 +45,9 @@ class User {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
+      'firebase_uid': firebaseUid,
+      'firebase_email': firebaseEmail,
       'username': username,
       'password_hash': passwordHash,
       'recovery_code_hash': recoveryCodeHash,
@@ -48,12 +59,16 @@ class User {
       'updated_at': updatedAt,
       'is_deleted': 0,
       'is_synced': 0,
+      'must_change_password': mustChangePassword ? 1 : 0,
     };
   }
 
   factory User.fromMap(Map<String, dynamic> map) {
     return User(
       id: map['id'],
+      syncId: map['sync_id'],
+      firebaseUid: map['firebase_uid'],
+      firebaseEmail: map['firebase_email'],
       username: map['username'],
       passwordHash: map['password_hash'],
       recoveryCodeHash: map['recovery_code_hash'],
@@ -63,6 +78,7 @@ class User {
       permissions: permissionsFromJson(map['permissions']),
       createdAt: map['created_at'],
       updatedAt: map['updated_at'],
+      mustChangePassword: (map['must_change_password'] ?? 0) == 1,
     );
   }
 }

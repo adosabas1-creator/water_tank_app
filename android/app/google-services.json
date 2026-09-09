@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "40842409498",
+    "project_id": "alborai-water-tank",
+    "storage_bucket": "alborai-water-tank.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:40842409498:android:64640f7b962865508083a3",
+        "android_client_info": {
+          "package_name": "com.alborai.water_tank_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCzO3my4Lcxb4BLKZ0d1JJdz-HTXXyV1vE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

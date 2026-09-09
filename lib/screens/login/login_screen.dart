@@ -5,6 +5,7 @@ import '../../core/auth/auth_service.dart';
 import '../../core/auth/user_provider.dart';
 import '../../core/constants/app_constants.dart';
 import '../dashboard/dashboard_screen.dart';
+import 'change_password_screen.dart';
 
 class PasswordRecoveryScreen extends StatefulWidget {
   const PasswordRecoveryScreen({super.key});
@@ -427,11 +428,19 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null) {
         context.read<UserProvider>().setUser(user);
 
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => const DashboardScreen(),
-          ),
-        );
+        if (user.mustChangePassword) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const ChangePasswordScreen(),
+            ),
+          );
+        } else {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const DashboardScreen(),
+            ),
+          );
+        }
       } else {
         setState(() {
           _isLoading = false;

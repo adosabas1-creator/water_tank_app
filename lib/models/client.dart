@@ -1,5 +1,6 @@
 class Client {
   final int? id;
+  final String syncId;
   final String? clientNumber;
   final String name;
   final String? phone;
@@ -12,6 +13,7 @@ class Client {
 
   Client({
     this.id,
+    required this.syncId,
     this.clientNumber,
     required this.name,
     this.phone,
@@ -26,6 +28,7 @@ class Client {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
       'client_number': clientNumber,
       'name': name,
       'phone': phone,
@@ -41,6 +44,7 @@ class Client {
   factory Client.fromMap(Map<String, dynamic> map) {
     return Client(
       id: map['id'],
+      syncId: map['sync_id'] as String,
       clientNumber: map['client_number'],
       name: map['name'],
       phone: map['phone'],

@@ -1,10 +1,25 @@
+import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'dart:convert';
 import '../database/database_helper.dart';
 import '../../models/user.dart';
 import '../constants/permissions.dart';
 
 class AuthService {
+  final firebase_auth.FirebaseAuth _firebaseAuth = firebase_auth.FirebaseAuth.instance;
+
+  Future<String?> signInToFirebase(
+    String email,
+    String password,
+  ) async {
+    final credential = await _firebaseAuth.signInWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+    return credential.user?.uid;
+  }
+
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
   Future<User?> login(String username, String password) async {
@@ -24,6 +39,7 @@ class AuthService {
   Future<int> createUser({
     required String username,
     required String password,
+    String? firebaseEmail,
     required String fullName,
     required String role,
     int? driverId,
@@ -32,6 +48,8 @@ class AuthService {
     final db = await _dbHelper.database;
     final now = DateTime.now().toIso8601String();
     final user = User(
+      syncId: const Uuid().v4(),
+      firebaseEmail: firebaseEmail?.trim().isEmpty == true ? null : firebaseEmail?.trim(),
       username: username,
       passwordHash: _hashPassword(password),
       fullName: fullName,
@@ -67,10 +85,37 @@ class AuthService {
       {
         'permissions': User.permissionsToJson(newPermissions),
         'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
       },
       where: 'id = ?',
       whereArgs: [userId],
     );
+  }
+
+  Future<bool> updateUserPassword({
+    required int userId,
+    required String newPassword,
+  }) async {
+    if (newPassword.length < 6) {
+      throw ArgumentError(
+        'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل',
+      );
+    }
+
+    final db = await _dbHelper.database;
+    final count = await db.update(
+      'users',
+      {
+        'password_hash': _hashPassword(newPassword),
+        'must_change_password': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+
+    return count > 0;
   }
 
   Future<List<User>> getAllUsers() async {

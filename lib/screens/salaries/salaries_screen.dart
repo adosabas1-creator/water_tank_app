@@ -1,3 +1,4 @@
+import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -138,6 +139,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                 if (salary == null) {
                   await _service.addSalary(
                     Salary(
+                      syncId: const Uuid().v4(),
                       employeeId: employeeId,
                       month: monthController.text.trim(),
                       baseSalary: baseSalary,
@@ -155,6 +157,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                   await _service.updateSalary(
                     Salary(
                       id: salary.id,
+                      syncId: salary.syncId,
                       employeeId: employeeId,
                       month: monthController.text.trim(),
                       baseSalary: baseSalary,

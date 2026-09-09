@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../../models/driver.dart';
 import '../../services/driver_service.dart';
 import '../../core/network/communication_service.dart';
@@ -64,8 +65,7 @@ class _DriversScreenState extends State<DriversScreen> {
                 title: Text(driver.name),
                 subtitle: Text(
                   [
-                    if (driver.phone?.isNotEmpty == true)
-                      driver.phone!,
+                    if (driver.phone?.isNotEmpty == true) driver.phone!,
                     if (driver.licenseNumber?.isNotEmpty == true)
                       'رخصة: ${driver.licenseNumber}',
                   ].join(' - '),
@@ -192,6 +192,7 @@ class _DriversScreenState extends State<DriversScreen> {
 
                 final driver = Driver(
                   id: existing?.id,
+                  syncId: existing?.syncId ?? const Uuid().v4(),
                   name: name,
                   phone: phoneCtrl.text.trim().isEmpty
                       ? null

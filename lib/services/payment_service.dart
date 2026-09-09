@@ -23,8 +23,7 @@ class PaymentService {
     final db = await _dbHelper.database;
     final result = await db.query(
       'payments',
-      where:
-          'payment_type = ? AND reference_id = ? AND is_deleted = 0',
+      where: 'payment_type = ? AND reference_id = ? AND is_deleted = 0',
       whereArgs: ['client_payment', clientId],
       orderBy: 'payment_date ASC',
     );
@@ -35,8 +34,7 @@ class PaymentService {
     final db = await _dbHelper.database;
     final result = await db.query(
       'payments',
-      where:
-          'payment_type = ? AND reference_id = ? AND is_deleted = 0',
+      where: 'payment_type = ? AND reference_id = ? AND is_deleted = 0',
       whereArgs: ['supplier_payment', supplierId],
       orderBy: 'payment_date ASC',
     );
@@ -45,9 +43,11 @@ class PaymentService {
 
   Future<void> updatePayment(Payment payment) async {
     final db = await _dbHelper.database;
+    final data = payment.toMap();
+    data['is_synced'] = 0;
     await db.update(
       'payments',
-      payment.toMap(),
+      data,
       where: 'id = ?',
       whereArgs: [payment.id],
     );
@@ -59,6 +59,7 @@ class PaymentService {
       'payments',
       {
         'is_deleted': 1,
+        'is_synced': 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',

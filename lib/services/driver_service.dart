@@ -11,24 +11,42 @@ class DriverService {
 
   Future<List<Driver>> getAllDrivers() async {
     final db = await _dbHelper.database;
-    final result = await db.query('drivers', where: 'is_deleted = 0', orderBy: 'name ASC');
+    final result =
+        await db.query('drivers', where: 'is_deleted = 0', orderBy: 'name ASC');
     return result.map((e) => Driver.fromMap(e)).toList();
   }
 
   Future<Driver?> getDriverById(int id) async {
     final db = await _dbHelper.database;
-    final result = await db.query('drivers', where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
+    final result = await db
+        .query('drivers', where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
     if (result.isNotEmpty) return Driver.fromMap(result.first);
     return null;
   }
 
   Future<void> updateDriver(Driver driver) async {
     final db = await _dbHelper.database;
-    await db.update('drivers', driver.toMap(), where: 'id = ?', whereArgs: [driver.id]);
+    final data = driver.toMap();
+    data['is_synced'] = 0;
+    await db.update(
+      'drivers',
+      data,
+      where: 'id = ?',
+      whereArgs: [driver.id],
+    );
   }
 
   Future<void> deleteDriver(int id) async {
     final db = await _dbHelper.database;
-    await db.update('drivers', {'is_deleted': 1, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'drivers',
+      {
+        'is_deleted': 1,
+        'is_synced': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 }

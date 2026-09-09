@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:uuid/uuid.dart';
 import '../constants/app_constants.dart';
 
 class DatabaseHelper {
@@ -40,13 +41,18 @@ class DatabaseHelper {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         is_deleted INTEGER DEFAULT 0,
-        is_synced INTEGER DEFAULT 0
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        firebase_uid TEXT,
+        firebase_email TEXT,
+        must_change_password INTEGER DEFAULT 0
       )
     ''');
 
     await db.execute('''
       CREATE TABLE clients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_id TEXT UNIQUE NOT NULL,
         client_number TEXT UNIQUE,
         name TEXT NOT NULL,
         phone TEXT,
@@ -62,6 +68,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE suppliers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_id TEXT UNIQUE NOT NULL,
         supplier_number TEXT UNIQUE,
         name TEXT NOT NULL,
         phone TEXT,
@@ -78,6 +85,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE drivers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_id TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
         phone TEXT,
         license_number TEXT,
@@ -100,6 +108,7 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL,
         is_deleted INTEGER DEFAULT 0,
         is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (driver_id) REFERENCES drivers (id)
       )
     ''');
@@ -120,6 +129,7 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL,
         is_deleted INTEGER DEFAULT 0,
         is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (tank_id) REFERENCES tanks (id),
         FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
         FOREIGN KEY (employee_id) REFERENCES users (id),
@@ -148,6 +158,7 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL,
         is_deleted INTEGER DEFAULT 0,
         is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (client_id) REFERENCES clients (id),
         FOREIGN KEY (tank_id) REFERENCES tanks (id),
         FOREIGN KEY (driver_id) REFERENCES drivers (id),
@@ -169,6 +180,7 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL,
         is_deleted INTEGER DEFAULT 0,
         is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (created_by) REFERENCES users (id)
       )
     ''');
@@ -185,6 +197,7 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL,
         is_deleted INTEGER DEFAULT 0,
         is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (created_by) REFERENCES users (id)
       )
     ''');
@@ -205,6 +218,7 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL,
         is_deleted INTEGER DEFAULT 0,
         is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (employee_id) REFERENCES users (id),
         FOREIGN KEY (created_by) REFERENCES users (id)
       )
@@ -233,6 +247,76 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 11) {
+      final userColumns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+      final hasUserSyncId = userColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasUserSyncId) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN sync_id TEXT',
+        );
+
+        final userRows = await db.query(
+          'users',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in userRows) {
+          await db.update(
+            'users',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 13) {
+      final userColumns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+      final hasMustChangePassword = userColumns.any(
+        (column) => column['name'] == 'must_change_password',
+      );
+
+      if (!hasMustChangePassword) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0',
+        );
+      }
+    }
+
+    if (oldVersion < 12) {
+      final userColumns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+      final hasFirebaseUid = userColumns.any(
+        (column) => column['name'] == 'firebase_uid',
+      );
+      final hasFirebaseEmail = userColumns.any(
+        (column) => column['name'] == 'firebase_email',
+      );
+
+      if (!hasFirebaseUid) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN firebase_uid TEXT',
+        );
+      }
+
+      if (!hasFirebaseEmail) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN firebase_email TEXT',
+        );
+      }
+    }
+
     if (oldVersion < 2) {
       final columns = await db.rawQuery('PRAGMA table_info(users)');
       final hasDriverId = columns.any(
@@ -256,6 +340,279 @@ class DatabaseHelper {
         await db.execute(
           'ALTER TABLE users ADD COLUMN recovery_code_hash TEXT',
         );
+      }
+    }
+
+    if (oldVersion < 10) {
+      final salaryColumns = await db.rawQuery(
+        'PRAGMA table_info(salaries)',
+      );
+      final hasSalarySyncId = salaryColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasSalarySyncId) {
+        await db.execute(
+          'ALTER TABLE salaries ADD COLUMN sync_id TEXT',
+        );
+
+        final salaryRows = await db.query(
+          'salaries',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in salaryRows) {
+          await db.update(
+            'salaries',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 9) {
+      final expenseColumns = await db.rawQuery(
+        'PRAGMA table_info(expenses)',
+      );
+      final hasExpenseSyncId = expenseColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasExpenseSyncId) {
+        await db.execute(
+          'ALTER TABLE expenses ADD COLUMN sync_id TEXT',
+        );
+
+        final expenseRows = await db.query(
+          'expenses',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in expenseRows) {
+          await db.update(
+            'expenses',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 8) {
+      final paymentColumns = await db.rawQuery(
+        'PRAGMA table_info(payments)',
+      );
+      final hasPaymentSyncId = paymentColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasPaymentSyncId) {
+        await db.execute(
+          'ALTER TABLE payments ADD COLUMN sync_id TEXT',
+        );
+
+        final paymentRows = await db.query(
+          'payments',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in paymentRows) {
+          await db.update(
+            'payments',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 7) {
+      final saleColumns = await db.rawQuery(
+        'PRAGMA table_info(sales)',
+      );
+      final hasSaleSyncId = saleColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasSaleSyncId) {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN sync_id TEXT',
+        );
+
+        final saleRows = await db.query(
+          'sales',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in saleRows) {
+          await db.update(
+            'sales',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 6) {
+      final operationColumns = await db.rawQuery(
+        'PRAGMA table_info(filling_operations)',
+      );
+      final hasOperationSyncId = operationColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasOperationSyncId) {
+        await db.execute(
+          'ALTER TABLE filling_operations ADD COLUMN sync_id TEXT',
+        );
+
+        final operationRows = await db.query(
+          'filling_operations',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in operationRows) {
+          await db.update(
+            'filling_operations',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 5) {
+      final tankColumns = await db.rawQuery(
+        'PRAGMA table_info(tanks)',
+      );
+      final hasTankSyncId = tankColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasTankSyncId) {
+        await db.execute(
+          'ALTER TABLE tanks ADD COLUMN sync_id TEXT',
+        );
+
+        final tankRows = await db.query(
+          'tanks',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in tankRows) {
+          await db.update(
+            'tanks',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 4) {
+      final columns = await db.rawQuery('PRAGMA table_info(clients)');
+      final hasSyncId = columns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasSyncId) {
+        await db.execute(
+          'ALTER TABLE clients ADD COLUMN sync_id TEXT',
+        );
+
+        final rows = await db.query(
+          'clients',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in rows) {
+          await db.update(
+            'clients',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+
+      final driverColumns = await db.rawQuery(
+        'PRAGMA table_info(drivers)',
+      );
+      final hasDriverSyncId = driverColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasDriverSyncId) {
+        await db.execute(
+          'ALTER TABLE drivers ADD COLUMN sync_id TEXT',
+        );
+
+        final driverRows = await db.query(
+          'drivers',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in driverRows) {
+          await db.update(
+            'drivers',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+
+      final supplierColumns = await db.rawQuery(
+        'PRAGMA table_info(suppliers)',
+      );
+      final hasSupplierSyncId = supplierColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasSupplierSyncId) {
+        await db.execute(
+          'ALTER TABLE suppliers ADD COLUMN sync_id TEXT',
+        );
+
+        final supplierRows = await db.query(
+          'suppliers',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in supplierRows) {
+          await db.update(
+            'suppliers',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
       }
     }
   }

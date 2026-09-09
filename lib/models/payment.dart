@@ -1,7 +1,8 @@
 class Payment {
   final int? id;
+  final String syncId;
   final String paymentType; // client_payment / supplier_payment
-  final int referenceId;    // client_id or supplier_id
+  final int referenceId; // client_id or supplier_id
   final double amount;
   final String paymentDate;
   final String? notes;
@@ -13,6 +14,7 @@ class Payment {
 
   Payment({
     this.id,
+    required this.syncId,
     required this.paymentType,
     required this.referenceId,
     required this.amount,
@@ -28,6 +30,7 @@ class Payment {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
       'payment_type': paymentType,
       'reference_id': referenceId,
       'amount': amount,
@@ -44,6 +47,7 @@ class Payment {
   factory Payment.fromMap(Map<String, dynamic> map) {
     return Payment(
       id: map['id'],
+      syncId: map['sync_id'] as String,
       paymentType: map['payment_type'],
       referenceId: map['reference_id'],
       amount: map['amount'],

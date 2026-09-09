@@ -24,9 +24,11 @@ class SalaryService {
   Future<void> updateSalary(Salary salary) async {
     final db = await _dbHelper.database;
 
+    final data = salary.toMap();
+    data['is_synced'] = 0;
     await db.update(
       'salaries',
-      salary.toMap(),
+      data,
       where: 'id = ?',
       whereArgs: [salary.id],
     );
@@ -39,6 +41,7 @@ class SalaryService {
       'salaries',
       {
         'is_deleted': 1,
+        'is_synced': 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',

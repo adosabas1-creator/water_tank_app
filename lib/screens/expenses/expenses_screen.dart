@@ -1,3 +1,4 @@
+import 'package:uuid/uuid.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -86,6 +87,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
                 if (expense == null) {
                   final newExpense = Expense(
+                    syncId: const Uuid().v4(),
                     expenseType: typeController.text.trim(),
                     amount: amount,
                     expenseDate: selectedDate.toIso8601String(),
@@ -102,6 +104,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   await _service.addExpense(newExpense);
                 } else {
                   final updatedExpense = Expense(
+                           syncId: expense.syncId,
                     id: expense.id,
                     expenseType: typeController.text.trim(),
                     amount: amount,

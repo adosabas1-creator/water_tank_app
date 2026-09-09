@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 import '../../models/supplier.dart';
 import '../../models/operation_log.dart';
 import '../../services/supplier_service.dart';
@@ -89,8 +90,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                 title: Text(supplier.name),
                 subtitle: Text(
                   [
-                    if (supplier.phone?.isNotEmpty == true)
-                      supplier.phone!,
+                    if (supplier.phone?.isNotEmpty == true) supplier.phone!,
                     if (supplier.location?.isNotEmpty == true)
                       supplier.location!,
                   ].join(' - '),
@@ -254,6 +254,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
 
                     final supplier = Supplier(
                       id: existing?.id,
+                      syncId: existing?.syncId ?? const Uuid().v4(),
                       supplierNumber: numberCtrl.text.trim().isEmpty
                           ? null
                           : numberCtrl.text.trim(),
@@ -273,7 +274,6 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
                     );
 
                     try {
-
                       if (existing == null) {
                         final id = await _service.addSupplier(supplier);
 

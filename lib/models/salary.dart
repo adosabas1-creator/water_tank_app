@@ -1,5 +1,6 @@
 class Salary {
   final int? id;
+  final String syncId;
   final int employeeId;
   final String month;
   final double baseSalary;
@@ -16,6 +17,7 @@ class Salary {
 
   Salary({
     this.id,
+    required this.syncId,
     required this.employeeId,
     required this.month,
     required this.baseSalary,
@@ -34,6 +36,7 @@ class Salary {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
       'employee_id': employeeId,
       'month': month,
       'base_salary': baseSalary,
@@ -53,6 +56,7 @@ class Salary {
   factory Salary.fromMap(Map<String, dynamic> map) {
     return Salary(
       id: map['id'],
+      syncId: map['sync_id'],
       employeeId: map['employee_id'],
       month: map['month'],
       baseSalary: map['base_salary'],

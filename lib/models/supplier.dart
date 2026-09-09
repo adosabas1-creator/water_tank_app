@@ -1,5 +1,6 @@
 class Supplier {
   final int? id;
+  final String syncId;
   final String? supplierNumber;
   final String name;
   final String? phone;
@@ -13,6 +14,7 @@ class Supplier {
 
   Supplier({
     this.id,
+    required this.syncId,
     this.supplierNumber,
     required this.name,
     this.phone,
@@ -28,6 +30,7 @@ class Supplier {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'sync_id': syncId,
       'supplier_number': supplierNumber,
       'name': name,
       'phone': phone,
@@ -44,6 +47,7 @@ class Supplier {
   factory Supplier.fromMap(Map<String, dynamic> map) {
     return Supplier(
       id: map['id'],
+      syncId: map['sync_id'] as String,
       supplierNumber: map['supplier_number'],
       name: map['name'],
       phone: map['phone'],

@@ -24,11 +24,22 @@ class ClientService {
 
   Future<void> updateClient(Client client) async {
     final db = await _dbHelper.database;
-    await db.update('clients', client.toMap(), where: 'id = ?', whereArgs: [client.id]);
+    final data = client.toMap();
+    data['is_synced'] = 0;
+    await db.update('clients', data, where: 'id = ?', whereArgs: [client.id]);
   }
 
   Future<void> deleteClient(int id) async {
     final db = await _dbHelper.database;
-    await db.update('clients', {'is_deleted': 1, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'clients',
+      {
+        'is_deleted': 1,
+        'is_synced': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 }

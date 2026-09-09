@@ -43,9 +43,11 @@ class SaleService {
   Future<void> updateSale(Sale sale) async {
     final db = await _dbHelper.database;
 
+    final data = sale.toMap();
+    data['is_synced'] = 0;
     await db.update(
       'sales',
-      sale.toMap(),
+      data,
       where: 'id = ?',
       whereArgs: [sale.id],
     );

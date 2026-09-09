@@ -18,18 +18,32 @@ import 'screens/reports/reports_screen.dart';
 import 'screens/statements/statements_screen.dart';
 import 'screens/users/users_screen.dart';
 import 'screens/logs/logs_screen.dart';
+import 'services/backup_service.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  _initializeFirebase();
+  await _initializeDatabase();
+  await _runAutomaticBackup();
+
   runApp(
     ChangeNotifierProvider<UserProvider>(
       create: (_) => UserProvider(),
       child: const MyApp(),
     ),
   );
+}
 
-  _initializeFirebase();
-  _initializeDatabase();
+Future<void> _runAutomaticBackup() async {
+  try {
+    final backupService = BackupService();
+    await backupService.runAutomaticBackupIfDue();
+    debugPrint('Automatic backup check completed');
+  } catch (e, stackTrace) {
+    debugPrint('Automatic backup failed: $e');
+    debugPrint('$stackTrace');
+  }
 }
 
 Future<void> _initializeFirebase() async {

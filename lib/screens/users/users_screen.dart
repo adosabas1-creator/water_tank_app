@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../models/user.dart';
@@ -381,6 +383,63 @@ class _UsersScreenState extends State<UsersScreen> {
     );
   }
 
+  Future<void> _setRecoveryCode(User user) async {
+    final random = Random.secure();
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final code = List.generate(
+      10,
+      (_) => chars[random.nextInt(chars.length)],
+    ).join();
+
+    try {
+      final success = await _authService.setRecoveryCode(
+        userId: user.id!,
+        recoveryCode: code,
+      );
+
+      if (!mounted) return;
+
+      if (!success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر إعداد رمز الاسترداد'),
+          ),
+        );
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('رمز الاسترداد'),
+            content: SelectableText(
+              'المستخدم: ${user.fullName}\\n\\n'
+              'رمز الاسترداد:\\n$code\\n\\n'
+              'احفظ هذا الرمز في مكان آمن وأعطه للمستخدم. '
+              'لن يتم عرض الرمز مرة أخرى بعد إغلاق هذه النافذة.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('تم الحفظ'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('حدث خطأ أثناء إعداد رمز الاسترداد: $e'),
+        ),
+      );
+    }
+  }
+
   Future<void> _showPermissionsDialog(User user) async {
     await showDialog<void>(
       context: context,
@@ -442,6 +501,19 @@ class _UsersScreenState extends State<UsersScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    ListTile(
+                      leading: const Icon(Icons.key),
+                      title: const Text('إعداد رمز الاسترداد'),
+                      subtitle: const Text(
+                        'إنشاء رمز جديد لاستعادة كلمة المرور',
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _setRecoveryCode(user);
+                      },
+                    ),
+                    const Divider(),
                     _buildCheckbox(
                       setDialogState,
                       user,

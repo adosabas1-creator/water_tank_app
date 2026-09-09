@@ -79,6 +79,92 @@ class AuthService {
     return result.map((e) => User.fromMap(e)).toList();
   }
 
+  Future<bool> setRecoveryCode({
+    required int userId,
+    required String recoveryCode,
+  }) async {
+    final code = recoveryCode.trim();
+
+    if (code.length < 6) {
+      throw ArgumentError('رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
+    }
+
+    final db = await _dbHelper.database;
+
+    final count = await db.update(
+      'users',
+      {
+        'recovery_code_hash': _hashPassword(code),
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+
+    return count > 0;
+  }
+
+  Future<bool> verifyRecoveryCode({
+    required String username,
+    required String recoveryCode,
+  }) async {
+    final db = await _dbHelper.database;
+
+    final result = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'username = ? AND recovery_code_hash = ? AND is_deleted = 0',
+      whereArgs: [
+        username.trim(),
+        _hashPassword(recoveryCode.trim()),
+      ],
+      limit: 1,
+    );
+
+    return result.isNotEmpty;
+  }
+
+  Future<bool> resetPasswordWithRecoveryCode({
+    required String username,
+    required String recoveryCode,
+    required String newPassword,
+  }) async {
+    if (newPassword.length < 6) {
+      throw ArgumentError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
+    }
+
+    final db = await _dbHelper.database;
+
+    final result = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'username = ? AND recovery_code_hash = ? AND is_deleted = 0',
+      whereArgs: [
+        username.trim(),
+        _hashPassword(recoveryCode.trim()),
+      ],
+      limit: 1,
+    );
+
+    if (result.isEmpty) {
+      return false;
+    }
+
+    await db.update(
+      'users',
+      {
+        'password_hash': _hashPassword(newPassword),
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ?',
+      whereArgs: [result.first['id']],
+    );
+
+    return true;
+  }
+
   String _hashPassword(String password) {
     final bytes = utf8.encode(password);
     final digest = sha256.convert(bytes);

@@ -32,6 +32,7 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
+        recovery_code_hash TEXT,
         full_name TEXT NOT NULL,
         role TEXT NOT NULL,
         driver_id INTEGER,
@@ -223,6 +224,14 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> closeDatabase() async {
+    final db = _database;
+    _database = null;
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       final columns = await db.rawQuery('PRAGMA table_info(users)');
@@ -233,6 +242,19 @@ class DatabaseHelper {
       if (!hasDriverId) {
         await db.execute(
           'ALTER TABLE users ADD COLUMN driver_id INTEGER',
+        );
+      }
+    }
+
+    if (oldVersion < 3) {
+      final columns = await db.rawQuery('PRAGMA table_info(users)');
+      final hasRecoveryCodeHash = columns.any(
+        (column) => column['name'] == 'recovery_code_hash',
+      );
+
+      if (!hasRecoveryCodeHash) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN recovery_code_hash TEXT',
         );
       }
     }

@@ -4,6 +4,7 @@ class User {
   final int? id;
   final String username;
   final String passwordHash;
+  final String? recoveryCodeHash;
   final String fullName;
   final String role;
   final int? driverId;
@@ -15,6 +16,7 @@ class User {
     this.id,
     required this.username,
     required this.passwordHash,
+    this.recoveryCodeHash,
     required this.fullName,
     required this.role,
     this.driverId,
@@ -37,6 +39,7 @@ class User {
       'id': id,
       'username': username,
       'password_hash': passwordHash,
+      'recovery_code_hash': recoveryCodeHash,
       'full_name': fullName,
       'role': role,
       'driver_id': driverId,
@@ -53,6 +56,7 @@ class User {
       id: map['id'],
       username: map['username'],
       passwordHash: map['password_hash'],
+      recoveryCodeHash: map['recovery_code_hash'],
       fullName: map['full_name'],
       role: map['role'],
       driverId: map['driver_id'],

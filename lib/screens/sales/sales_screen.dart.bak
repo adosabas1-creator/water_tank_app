@@ -4,10 +4,6 @@ import 'package:provider/provider.dart';
 import '../../models/sale.dart';
 import '../../services/sale_service.dart';
 import '../../core/auth/user_provider.dart';
-import '../../core/auth/auth_service.dart';
-import '../../models/user.dart';
-import '../../models/driver.dart';
-import '../../services/driver_service.dart';
 
 class SalesScreen extends StatefulWidget {
   const SalesScreen({super.key});
@@ -18,40 +14,12 @@ class SalesScreen extends StatefulWidget {
 
 class _SalesScreenState extends State<SalesScreen> {
   final SaleService _service = SaleService();
-  final AuthService _authService = AuthService();
-  final DriverService _driverService = DriverService();
   late Future<List<Sale>> _future;
-  List<User> _users = [];
-  List<Driver> _drivers = [];
 
   @override
   void initState() {
     super.initState();
     _future = _service.getAllSales();
-    _loadNames();
-  }
-
-  Future<void> _loadNames() async {
-    try {
-      final users = await _authService.getAllUsers();
-      final drivers = await _driverService.getAllDrivers();
-      if (!mounted) return;
-      setState(() {
-        _users = users;
-        _drivers = drivers;
-      });
-    } catch (_) {}
-  }
-
-  String _userName(int id) {
-    final user = _users.where((u) => u.id == id).firstOrNull;
-    return user?.fullName ?? 'مستخدم #$id';
-  }
-
-  String _driverName(int? id) {
-    if (id == null) return 'غير محدد';
-    final driver = _drivers.where((d) => d.id == id).firstOrNull;
-    return driver?.name ?? 'سائق #$id';
   }
 
   void _refresh() {
@@ -109,16 +77,14 @@ class _SalesScreenState extends State<SalesScreen> {
                         : 'بيع #${sale.id}',
                   ),
                   subtitle: Text(
-                          'العميل: ${sale.clientId} | '
-                          'الصهريج: ${sale.tankId}\n'
-                          'الوحدات: ${sale.units} | '
-                          'الإجمالي: ${sale.totalAmount.toStringAsFixed(2)} ريال\n'
-                          'سجّلها: ${_userName(sale.createdBy)}\n'
-                          'السائق: ${_driverName(sale.driverId)}\n'
-                          'التاريخ: ${sale.saleDate} | '
-                          'الحالة: ${_paymentStatusText(sale.paymentStatus)}',
-                        ),
-                        isThreeLine: true,
+                    'العميل: ${sale.clientId} | '
+                    'الصهريج: ${sale.tankId}\n'
+                    'الوحدات: ${sale.units} | '
+                    'الإجمالي: ${sale.totalAmount.toStringAsFixed(2)} ريال\n'
+                    'التاريخ: ${sale.saleDate} | '
+                    'الحالة: ${_paymentStatusText(sale.paymentStatus)}',
+                  ),
+                  isThreeLine: true,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -337,8 +303,9 @@ class _SalesScreenState extends State<SalesScreen> {
                     );
 
                     final driverText = driverIdCtrl.text.trim();
-                    final driverId =
-                        driverText.isEmpty ? null : int.tryParse(driverText);
+                    final driverId = driverText.isEmpty
+                        ? null
+                        : int.tryParse(driverText);
 
                     final supplierText = supplierIdCtrl.text.trim();
                     final supplierId = supplierText.isEmpty
@@ -383,7 +350,8 @@ class _SalesScreenState extends State<SalesScreen> {
                       return;
                     }
 
-                    if (supplierText.isNotEmpty && supplierId == null) {
+                    if (supplierText.isNotEmpty &&
+                        supplierId == null) {
                       _showDialogError(
                         dialogContext,
                         'رقم المورد غير صحيح',
@@ -423,7 +391,8 @@ class _SalesScreenState extends State<SalesScreen> {
                       return;
                     }
 
-                    final user = context.read<UserProvider>().currentUser;
+                    final user =
+                        context.read<UserProvider>().currentUser;
 
                     if (user?.id == null) {
                       _showDialogError(
@@ -439,9 +408,10 @@ class _SalesScreenState extends State<SalesScreen> {
 
                     final sale = Sale(
                       id: existing?.id,
-                      saleNumber: saleNumberCtrl.text.trim().isEmpty
-                          ? null
-                          : saleNumberCtrl.text.trim(),
+                      saleNumber:
+                          saleNumberCtrl.text.trim().isEmpty
+                              ? null
+                              : saleNumberCtrl.text.trim(),
                       clientId: clientId,
                       tankId: tankId,
                       driverId: driverId,

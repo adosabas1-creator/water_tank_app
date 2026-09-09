@@ -9,26 +9,59 @@ class SaleService {
     return await db.insert('sales', sale.toMap());
   }
 
-  Future<List<Sale>> getAllSales() async {
+  Future<List<Sale>> getAllSales({int? driverId}) async {
     final db = await _dbHelper.database;
-    final result = await db.query('sales', where: 'is_deleted = 0', orderBy: 'sale_date DESC');
+
+    final result = await db.query(
+      'sales',
+      where: driverId == null
+          ? 'is_deleted = 0'
+          : 'is_deleted = 0 AND driver_id = ?',
+      whereArgs: driverId == null ? null : [driverId],
+      orderBy: 'sale_date DESC',
+    );
+
     return result.map((e) => Sale.fromMap(e)).toList();
   }
 
   Future<Sale?> getSaleById(int id) async {
     final db = await _dbHelper.database;
-    final result = await db.query('sales', where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
-    if (result.isNotEmpty) return Sale.fromMap(result.first);
+
+    final result = await db.query(
+      'sales',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [id],
+    );
+
+    if (result.isNotEmpty) {
+      return Sale.fromMap(result.first);
+    }
+
     return null;
   }
 
   Future<void> updateSale(Sale sale) async {
     final db = await _dbHelper.database;
-    await db.update('sales', sale.toMap(), where: 'id = ?', whereArgs: [sale.id]);
+
+    await db.update(
+      'sales',
+      sale.toMap(),
+      where: 'id = ?',
+      whereArgs: [sale.id],
+    );
   }
 
   Future<void> deleteSale(int id) async {
     final db = await _dbHelper.database;
-    await db.update('sales', {'is_deleted': 1, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ?', whereArgs: [id]);
+
+    await db.update(
+      'sales',
+      {
+        'is_deleted': 1,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 }

@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -150,8 +149,8 @@ class BackupService {
   }
 
   Future<void> automaticBackup() async {
-    final supportDir = await getApplicationSupportDirectory();
-    final backupDir = Directory(p.join(supportDir.path, 'backups'));
+    final databaseDir = await getDatabasesPath();
+    final backupDir = Directory(p.join(databaseDir, 'backups'));
 
     await backupDir.create(recursive: true);
     await _closeDatabase();

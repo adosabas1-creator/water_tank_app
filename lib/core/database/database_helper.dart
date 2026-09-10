@@ -247,6 +247,32 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 14) {
+      final clientColumns = await db.rawQuery(
+        'PRAGMA table_info(clients)',
+      );
+      final hasClientPhone = clientColumns.any(
+        (column) => column['name'] == 'phone',
+      );
+      if (!hasClientPhone) {
+        await db.execute(
+          'ALTER TABLE clients ADD COLUMN phone TEXT',
+        );
+      }
+
+      final supplierColumns = await db.rawQuery(
+        'PRAGMA table_info(suppliers)',
+      );
+      final hasSupplierPhone = supplierColumns.any(
+        (column) => column['name'] == 'phone',
+      );
+      if (!hasSupplierPhone) {
+        await db.execute(
+          'ALTER TABLE suppliers ADD COLUMN phone TEXT',
+        );
+      }
+    }
+
     if (oldVersion < 11) {
       final userColumns = await db.rawQuery(
         'PRAGMA table_info(users)',

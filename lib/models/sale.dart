@@ -2,10 +2,10 @@ class Sale {
   final int? id;
   final String syncId;
   final String? saleNumber;
-  final int clientId;
-  final int tankId;
+  final int? clientId;
+  final int? tankId;
   final int? driverId;
-  final int? supplierId;
+  final int supplierId;
   final int units;
   final double salePrice;
   final double totalAmount;
@@ -24,10 +24,10 @@ class Sale {
     this.id,
     required this.syncId,
     this.saleNumber,
-    required this.clientId,
-    required this.tankId,
+    this.clientId,
+    this.tankId,
     this.driverId,
-    this.supplierId,
+    required this.supplierId,
     required this.units,
     required this.salePrice,
     required this.totalAmount,

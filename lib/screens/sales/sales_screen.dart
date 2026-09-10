@@ -92,7 +92,8 @@ class _SalesScreenState extends State<SalesScreen> {
     return client?.phone ?? '';
   }
 
-  String _supplierName(int id) {
+  String _supplierName(int? id) {
+    if (id == null) return 'غير محدد';
     return _supplierById(id)?.name ?? 'غير محدد';
   }
 

@@ -402,7 +402,7 @@ class _SalesScreenState extends State<SalesScreen> {
                           ? null
                           : saleNumberController.text.trim(),
                       clientId: selectedClientId,
-                      tankId: int.tryParse(tankIdController.text.trim()),
+                      tankId: int.tryParse(tankIdController.text.trim()) ?? 0,
                       driverId: selectedDriverId,
                       supplierId: selectedSupplierId!,
                       units: units,

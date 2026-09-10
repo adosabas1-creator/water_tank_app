@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/auth/auth_service.dart';
 import '../../core/auth/user_provider.dart';
+import '../../core/network/sync_service.dart';
 import '../../core/constants/app_constants.dart';
 import '../dashboard/dashboard_screen.dart';
 import 'change_password_screen.dart';
@@ -11,25 +12,27 @@ class PasswordRecoveryScreen extends StatefulWidget {
   const PasswordRecoveryScreen({super.key});
 
   @override
-  State<PasswordRecoveryScreen> createState() =>
-      _PasswordRecoveryScreenState();
+  State<PasswordRecoveryScreen> createState() => _PasswordRecoveryScreenState();
 }
 
 class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _recoveryCodeController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final AuthService _authService = AuthService();
 
   bool _isLoading = false;
+  bool _useEmail = true;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
     _usernameController.dispose();
+    _emailController.dispose();
     _recoveryCodeController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
@@ -64,102 +67,156 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'أدخل بيانات الاسترداد ثم اختر كلمة مرور جديدة',
+                  'اختر طريقة استعادة كلمة المرور',
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 20),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment<bool>(
+                      value: true,
+                      icon: Icon(Icons.email_outlined),
+                      label: Text('البريد الإلكتروني'),
+                    ),
+                    ButtonSegment<bool>(
+                      value: false,
+                      icon: Icon(Icons.key),
+                      label: Text('رمز الاسترداد'),
+                    ),
+                  ],
+                  selected: {_useEmail},
+                  onSelectionChanged: _isLoading
+                      ? null
+                      : (selection) {
+                          setState(() {
+                            _useEmail = selection.first;
+                          });
+                        },
+                ),
                 const SizedBox(height: 24),
-                TextFormField(
-                  controller: _usernameController,
-                  decoration: const InputDecoration(
-                    labelText: 'اسم المستخدم',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person),
+                if (_useEmail) ...[
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'البريد الإلكتروني',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.email_outlined),
+                    ),
+                    validator: (value) {
+                      if (!_useEmail) return null;
+                      if (value == null || value.trim().isEmpty) {
+                        return 'أدخل البريد الإلكتروني';
+                      }
+                      if (!value.contains('@')) {
+                        return 'أدخل بريدًا إلكترونيًا صحيحًا';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'أدخل اسم المستخدم';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _recoveryCodeController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'رمز الاسترداد',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.key),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'سيتم إرسال رابط لإعادة تعيين كلمة المرور إلى بريدك الإلكتروني.',
+                    textAlign: TextAlign.center,
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().length < 6) {
-                      return 'أدخل رمز الاسترداد';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _newPasswordController,
-                  obscureText: _obscureNewPassword,
-                  decoration: InputDecoration(
-                    labelText: 'كلمة المرور الجديدة',
-                    border: const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.lock),
-                    suffixIcon: IconButton(
-                      onPressed: () {
-                        setState(() {
-                          _obscureNewPassword = !_obscureNewPassword;
-                        });
-                      },
-                      icon: Icon(
-                        _obscureNewPassword
-                            ? Icons.visibility
-                            : Icons.visibility_off,
+                ] else ...[
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: const InputDecoration(
+                      labelText: 'اسم المستخدم',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person),
+                    ),
+                    validator: (value) {
+                      if (_useEmail) return null;
+                      if (value == null || value.trim().isEmpty) {
+                        return 'أدخل اسم المستخدم';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _recoveryCodeController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'رمز الاسترداد',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.key),
+                    ),
+                    validator: (value) {
+                      if (_useEmail) return null;
+                      if (value == null || value.trim().length < 6) {
+                        return 'أدخل رمز الاسترداد';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _newPasswordController,
+                    obscureText: _obscureNewPassword,
+                    decoration: InputDecoration(
+                      labelText: 'كلمة المرور الجديدة',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _obscureNewPassword = !_obscureNewPassword;
+                          });
+                        },
+                        icon: Icon(
+                          _obscureNewPassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
                       ),
                     ),
+                    validator: (value) {
+                      if (_useEmail) return null;
+                      if (value == null || value.length < 6) {
+                        return 'كلمة المرور 6 أحرف أو أرقام على الأقل';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (value) {
-                    if (value == null || value.length < 6) {
-                      return 'كلمة المرور 6 أحرف أو أرقام على الأقل';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  obscureText: _obscureConfirmPassword,
-                  decoration: InputDecoration(
-                    labelText: 'تأكيد كلمة المرور',
-                    border: const OutlineInputBorder(),
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      onPressed: () {
-                        setState(() {
-                          _obscureConfirmPassword = !_obscureConfirmPassword;
-                        });
-                      },
-                      icon: Icon(
-                        _obscureConfirmPassword
-                            ? Icons.visibility
-                            : Icons.visibility_off,
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: _obscureConfirmPassword,
+                    decoration: InputDecoration(
+                      labelText: 'تأكيد كلمة المرور',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _obscureConfirmPassword = !_obscureConfirmPassword;
+                          });
+                        },
+                        icon: Icon(
+                          _obscureConfirmPassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
                       ),
                     ),
+                    validator: (value) {
+                      if (_useEmail) return null;
+                      if (value != _newPasswordController.text) {
+                        return 'كلمتا المرور غير متطابقتين';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (value) {
-                    if (value != _newPasswordController.text) {
-                      return 'كلمتا المرور غير متطابقتين';
-                    }
-                    return null;
-                  },
-                ),
+                ],
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _resetPassword,
+                    onPressed: _isLoading ? null : _recover,
                     child: _isLoading
                         ? const SizedBox(
                             width: 24,
@@ -169,9 +226,11 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
                               strokeWidth: 2.5,
                             ),
                           )
-                        : const Text(
-                            'إعادة تعيين كلمة المرور',
-                            style: TextStyle(fontSize: 17),
+                        : Text(
+                            _useEmail
+                                ? 'إرسال رابط الاستعادة'
+                                : 'إعادة تعيين كلمة المرور',
+                            style: const TextStyle(fontSize: 17),
                           ),
                   ),
                 ),
@@ -183,18 +242,36 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
     );
   }
 
-  Future<void> _resetPassword() async {
+  Future<void> _recover() async {
     if (_isLoading) return;
-
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
+      if (_useEmail) {
+        await _authService.sendPasswordResetEmail(
+          _emailController.text.trim(),
+        );
+
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'تم إرسال رابط استعادة كلمة المرور إلى البريد الإلكتروني',
+            ),
+          ),
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+
       final success = await _authService.resetPasswordWithRecoveryCode(
         username: _usernameController.text.trim(),
         recoveryCode: _recoveryCodeController.text.trim(),
@@ -202,7 +279,6 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
       );
 
       if (!mounted) return;
-
       setState(() {
         _isLoading = false;
       });
@@ -210,7 +286,9 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('تم تغيير كلمة المرور بنجاح، يمكنك تسجيل الدخول الآن'),
+            content: Text(
+              'تم تغيير كلمة المرور بنجاح، يمكنك تسجيل الدخول الآن',
+            ),
           ),
         );
         Navigator.of(context).pop();
@@ -223,7 +301,6 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-
       setState(() {
         _isLoading = false;
       });
@@ -323,8 +400,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefixIcon: const Icon(Icons.person),
                     ),
                     validator: (value) {
-                      if (value == null ||
-                          value.trim().isEmpty) {
+                      if (value == null || value.trim().isEmpty) {
                         return 'أدخل اسم المستخدم';
                       }
 
@@ -335,8 +411,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
-                    onFieldSubmitted:
-                        _isLoading ? null : (_) => _login(),
+                    onFieldSubmitted: _isLoading ? null : (_) => _login(),
                     decoration: InputDecoration(
                       labelText: 'كلمة المرور',
                       border: OutlineInputBorder(
@@ -345,8 +420,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       prefixIcon: const Icon(Icons.lock),
                     ),
                     validator: (value) {
-                      if (value == null ||
-                          value.isEmpty) {
+                      if (value == null || value.isEmpty) {
                         return 'أدخل كلمة المرور';
                       }
 
@@ -360,8 +434,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         : () {
                             Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    const PasswordRecoveryScreen(),
+                                builder: (_) => const PasswordRecoveryScreen(),
                               ),
                             );
                           },
@@ -375,16 +448,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: _isLoading ? null : _login,
                       style: ElevatedButton.styleFrom(
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       child: _isLoading
                           ? const SizedBox(
                               width: 24,
                               height: 24,
-                              child:
-                                  CircularProgressIndicator(
+                              child: CircularProgressIndicator(
                                 color: Colors.white,
                                 strokeWidth: 2.5,
                               ),
@@ -427,6 +498,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (user != null) {
         context.read<UserProvider>().setUser(user);
+
+        try {
+          await SyncService().syncAll();
+        } catch (_) {
+          // فشل المزامنة لا يمنع الدخول إلى التطبيق.
+        }
+
+        if (!mounted) return;
 
         if (user.mustChangePassword) {
           Navigator.of(context).pushReplacement(

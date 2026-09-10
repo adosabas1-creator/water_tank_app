@@ -60,6 +60,7 @@ class SaleService {
       'sales',
       {
         'is_deleted': 1,
+        'is_synced': 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',

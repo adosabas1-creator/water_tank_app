@@ -7,7 +7,8 @@ import '../../models/user.dart';
 import '../constants/permissions.dart';
 
 class AuthService {
-  final firebase_auth.FirebaseAuth _firebaseAuth = firebase_auth.FirebaseAuth.instance;
+  final firebase_auth.FirebaseAuth _firebaseAuth =
+      firebase_auth.FirebaseAuth.instance;
 
   Future<String?> signInToFirebase(
     String email,
@@ -18,6 +19,25 @@ class AuthService {
       password: password,
     );
     return credential.user?.uid;
+  }
+
+  Future<String?> createFirebaseUser(
+    String email,
+    String password,
+  ) async {
+    final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final uid = credential.user?.uid;
+    await _firebaseAuth.signOut();
+    return uid;
+  }
+
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _firebaseAuth.sendPasswordResetEmail(
+      email: email.trim(),
+    );
   }
 
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -31,7 +51,34 @@ class AuthService {
       whereArgs: [username, passwordHash],
     );
     if (result.isNotEmpty) {
-      return User.fromMap(result.first);
+      final user = User.fromMap(result.first);
+
+      if (user.firebaseEmail != null && user.firebaseEmail!.isNotEmpty) {
+        try {
+          final credential = await _firebaseAuth.signInWithEmailAndPassword(
+            email: user.firebaseEmail!.trim(),
+            password: password,
+          );
+
+          if (credential.user?.uid != null &&
+              user.firebaseUid != credential.user!.uid) {
+            await db.update(
+              'users',
+              {
+                'firebase_uid': credential.user!.uid,
+                'updated_at': DateTime.now().toIso8601String(),
+                'is_synced': 0,
+              },
+              where: 'id = ?',
+              whereArgs: [user.id],
+            );
+          }
+        } catch (_) {
+          // فشل Firebase لا يمنع تسجيل الدخول المحلي.
+        }
+      }
+
+      return user;
     }
     return null;
   }
@@ -47,9 +94,17 @@ class AuthService {
   }) async {
     final db = await _dbHelper.database;
     final now = DateTime.now().toIso8601String();
+    final cleanEmail = firebaseEmail?.trim();
+
+    String? firebaseUid;
+    if (cleanEmail != null && cleanEmail.isNotEmpty) {
+      firebaseUid = await createFirebaseUser(cleanEmail, password);
+    }
+
     final user = User(
       syncId: const Uuid().v4(),
-      firebaseEmail: firebaseEmail?.trim().isEmpty == true ? null : firebaseEmail?.trim(),
+      firebaseUid: firebaseUid,
+      firebaseEmail: cleanEmail?.isEmpty == true ? null : cleanEmail,
       username: username,
       passwordHash: _hashPassword(password),
       fullName: fullName,
@@ -59,6 +114,7 @@ class AuthService {
       createdAt: now,
       updatedAt: now,
     );
+
     return await db.insert('users', user.toMap());
   }
 
@@ -131,7 +187,8 @@ class AuthService {
     final code = recoveryCode.trim();
 
     if (code.length < 6) {
-      throw ArgumentError('رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
+      throw ArgumentError(
+          'رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
     }
 
     final db = await _dbHelper.database;

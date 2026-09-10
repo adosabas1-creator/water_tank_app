@@ -5,6 +5,8 @@ workflows:
 
     environment:
       flutter: stable
+      android_signing:
+        - water_tank_key
 
     scripts:
       - name: Check Flutter and Java
@@ -16,7 +18,7 @@ workflows:
         script: |
           flutter pub get
 
-      - name: Build APK
+      - name: Build signed APK
         script: |
           flutter build apk --release
 

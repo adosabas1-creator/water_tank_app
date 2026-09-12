@@ -152,9 +152,6 @@ class DatabaseHelper {
         profit_amount REAL NOT NULL,
         sale_date TEXT NOT NULL,
         payment_status TEXT NOT NULL,
-        client_payment_status TEXT,
-        supplier_payment_status TEXT,
-        created_by_name TEXT,
         notes TEXT,
         created_by INTEGER NOT NULL,
         created_at TEXT NOT NULL,
@@ -189,34 +186,7 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE account_transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_type TEXT NOT NULL,
-        reference_id INTEGER NOT NULL,
-        amount REAL NOT NULL,
-        transaction_type TEXT NOT NULL,
-        transaction_date TEXT NOT NULL,
-        notes TEXT,
-        created_by INTEGER NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        is_deleted INTEGER DEFAULT 0,
-        is_synced INTEGER DEFAULT 0,
-        sync_id TEXT UNIQUE NOT NULL,
-        FOREIGN KEY (created_by) REFERENCES users (id)
-      )
-    ''');
-    await db.execute('''
-      CREATE INDEX idx_account_transactions_reference
-      ON account_transactions (
-        account_type,
-        reference_id,
-        transaction_date
-      )
-    ''');
-    await db.execute('''
       CREATE TABLE expenses (
-
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         expense_type TEXT NOT NULL,
         amount REAL NOT NULL,
@@ -277,124 +247,6 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 17) {
-      final fillingColumns = await db.rawQuery(
-        'PRAGMA table_info(filling_operations)',
-      );
-
-      final tankColumn = fillingColumns.firstWhere(
-        (column) => column['name'] == 'tank_id',
-        orElse: () => <String, Object?>{},
-      );
-
-      final tankIsNotNull = tankColumn['notnull'] == 1;
-
-      if (tankIsNotNull) {
-        await db.execute(
-          'ALTER TABLE filling_operations RENAME TO filling_operations_old',
-        );
-
-        await db.execute('''
-          CREATE TABLE filling_operations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            operation_number TEXT UNIQUE,
-            tank_id INTEGER,
-            supplier_id INTEGER NOT NULL,
-            units INTEGER NOT NULL,
-            purchase_price REAL NOT NULL,
-            operation_date TEXT NOT NULL,
-            employee_id INTEGER,
-            notes TEXT,
-            created_by INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            is_deleted INTEGER DEFAULT 0,
-            is_synced INTEGER DEFAULT 0,
-            sync_id TEXT UNIQUE NOT NULL,
-            FOREIGN KEY (tank_id) REFERENCES tanks (id),
-            FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
-            FOREIGN KEY (employee_id) REFERENCES users (id),
-            FOREIGN KEY (created_by) REFERENCES users (id)
-          )
-        ''');
-
-        await db.execute('''
-          INSERT INTO filling_operations (
-            id,
-            operation_number,
-            tank_id,
-            supplier_id,
-            units,
-            purchase_price,
-            operation_date,
-            employee_id,
-            notes,
-            created_by,
-            created_at,
-            updated_at,
-            is_deleted,
-            is_synced,
-            sync_id
-          )
-          SELECT
-            id,
-            operation_number,
-            tank_id,
-            supplier_id,
-            units,
-            purchase_price,
-            operation_date,
-            employee_id,
-            notes,
-            created_by,
-            created_at,
-            updated_at,
-            is_deleted,
-            is_synced,
-            sync_id
-          FROM filling_operations_old
-        ''');
-
-        await db.execute('DROP TABLE filling_operations_old');
-      }
-    }
-
-    if (oldVersion < 16) {
-      final salesColumns = await db.rawQuery(
-        'PRAGMA table_info(sales)',
-      );
-
-      final hasClientPaymentStatus = salesColumns.any(
-        (column) => column['name'] == 'client_payment_status',
-      );
-
-      final hasSupplierPaymentStatus = salesColumns.any(
-        (column) => column['name'] == 'supplier_payment_status',
-      );
-
-      final hasCreatedByName = salesColumns.any(
-        (column) => column['name'] == 'created_by_name',
-      );
-
-      if (!hasClientPaymentStatus) {
-        await db.execute(
-          'ALTER TABLE sales ADD COLUMN client_payment_status TEXT',
-        );
-      }
-
-      if (!hasSupplierPaymentStatus) {
-        await db.execute(
-          'ALTER TABLE sales ADD COLUMN supplier_payment_status TEXT',
-        );
-      }
-
-      if (!hasCreatedByName) {
-        await db.execute(
-          'ALTER TABLE sales ADD COLUMN created_by_name TEXT',
-        );
-      }
-    }
-
     if (oldVersion < 15) {
       final salesColumns = await db.rawQuery(
         'PRAGMA table_info(sales)',
@@ -860,35 +712,6 @@ class DatabaseHelper {
           );
         }
       }
-    }
-
-    if (oldVersion < 18) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS account_transactions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          account_type TEXT NOT NULL,
-          reference_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          transaction_type TEXT NOT NULL,
-          transaction_date TEXT NOT NULL,
-          notes TEXT,
-          created_by INTEGER NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          is_deleted INTEGER DEFAULT 0,
-          is_synced INTEGER DEFAULT 0,
-          sync_id TEXT UNIQUE NOT NULL,
-          FOREIGN KEY (created_by) REFERENCES users (id)
-        )
-      ''');
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_account_transactions_reference
-        ON account_transactions (account_type, reference_id, transaction_date)
-      ''');
-    }
-    if (oldVersion < 19) {
-      await db.execute('ALTER TABLE payments ADD COLUMN payment_method TEXT');
-      await db.execute('ALTER TABLE payments ADD COLUMN reference_number TEXT');
     }
   }
 }

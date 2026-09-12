@@ -30,13 +30,11 @@ class DashboardScreen extends StatelessWidget {
         children: [
           if (PermissionService.hasPermission(user, PermissionKeys.clientsView))
             _buildCard(context, 'العملاء', Icons.people, '/clients'),
-          if (PermissionService.hasPermission(user, PermissionKeys.suppliersView))
+          if (PermissionService.hasPermission(
+              user, PermissionKeys.suppliersView))
             _buildCard(context, 'الموردون', Icons.local_shipping, '/suppliers'),
           if (PermissionService.hasPermission(user, PermissionKeys.salesView))
             _buildCard(context, 'المبيعات', Icons.shopping_cart, '/sales'),
-          _buildCard(context, 'عمليات التعبئة', Icons.local_gas_station, '/filling'),
-          _buildCard(context, 'الصهاريج', Icons.local_fire_department, '/tanks'),
-          _buildCard(context, 'السائقون', Icons.drive_eta, '/drivers'),
           _buildCard(context, 'المدفوعات', Icons.payments, '/payments'),
           _buildCard(context, 'المصروفات', Icons.money_off, '/expenses'),
           _buildCard(context, 'الرواتب', Icons.attach_money, '/salaries'),
@@ -45,16 +43,19 @@ class DashboardScreen extends StatelessWidget {
             PermissionKeys.clientStatementsView,
             PermissionKeys.supplierStatementsView,
           ]))
-            _buildCard(context, 'كشوف الحسابات', Icons.receipt_long, '/statements'),
+            _buildCard(
+                context, 'كشوف الحسابات', Icons.receipt_long, '/statements'),
           if (PermissionService.hasPermission(user, PermissionKeys.usersManage))
-            _buildCard(context, 'المستخدمون', Icons.admin_panel_settings, '/users'),
+            _buildCard(
+                context, 'المستخدمون', Icons.admin_panel_settings, '/users'),
           _buildCard(context, 'سجل العمليات', Icons.history, '/logs'),
         ],
       ),
     );
   }
 
-  Widget _buildCard(BuildContext context, String title, IconData icon, String route) {
+  Widget _buildCard(
+      BuildContext context, String title, IconData icon, String route) {
     return Card(
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -66,7 +67,9 @@ class DashboardScreen extends StatelessWidget {
           children: [
             Icon(icon, size: 48, color: Colors.blue),
             const SizedBox(height: 8),
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            Text(title,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           ],
         ),
       ),

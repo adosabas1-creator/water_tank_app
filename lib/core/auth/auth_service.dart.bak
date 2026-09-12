@@ -118,57 +118,6 @@ class AuthService {
     return await db.insert('users', user.toMap());
   }
 
-  Future<bool> updateUser({
-    required int userId,
-    required String username,
-    required String fullName,
-    required String role,
-  }) async {
-    final cleanUsername = username.trim();
-    final cleanFullName = fullName.trim();
-
-    if (cleanUsername.isEmpty) {
-      throw ArgumentError('اسم المستخدم مطلوب');
-    }
-
-    if (cleanFullName.isEmpty) {
-      throw ArgumentError('الاسم الكامل مطلوب');
-    }
-
-    if (role != 'admin' && role != 'deputy_manager') {
-      throw ArgumentError('الدور غير صالح');
-    }
-
-    final db = await _dbHelper.database;
-
-    final duplicate = await db.query(
-      'users',
-      columns: ['id'],
-      where: 'username = ? AND id != ? AND is_deleted = 0',
-      whereArgs: [cleanUsername, userId],
-      limit: 1,
-    );
-
-    if (duplicate.isNotEmpty) {
-      throw ArgumentError('اسم المستخدم مستخدم بالفعل');
-    }
-
-    final count = await db.update(
-      'users',
-      {
-        'username': cleanUsername,
-        'full_name': cleanFullName,
-        'role': role,
-        'updated_at': DateTime.now().toIso8601String(),
-        'is_synced': 0,
-      },
-      where: 'id = ? AND is_deleted = 0',
-      whereArgs: [userId],
-    );
-
-    return count > 0;
-  }
-
   Future<void> updateDriver(int userId, int? driverId) async {
     final db = await _dbHelper.database;
 

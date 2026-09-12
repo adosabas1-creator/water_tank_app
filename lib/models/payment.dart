@@ -4,6 +4,8 @@ class Payment {
   final String paymentType; // client_payment / supplier_payment
   final int referenceId; // client_id or supplier_id
   final double amount;
+  final String? paymentMethod;
+  final String? referenceNumber;
   final String paymentDate;
   final String? notes;
   final int createdBy;
@@ -18,6 +20,8 @@ class Payment {
     required this.paymentType,
     required this.referenceId,
     required this.amount,
+    this.paymentMethod,
+    this.referenceNumber,
     required this.paymentDate,
     this.notes,
     required this.createdBy,
@@ -34,6 +38,8 @@ class Payment {
       'payment_type': paymentType,
       'reference_id': referenceId,
       'amount': amount,
+      'payment_method': paymentMethod,
+      'reference_number': referenceNumber,
       'payment_date': paymentDate,
       'notes': notes,
       'created_by': createdBy,
@@ -51,6 +57,8 @@ class Payment {
       paymentType: map['payment_type'],
       referenceId: map['reference_id'],
       amount: map['amount'],
+      paymentMethod: map['payment_method'] as String?,
+      referenceNumber: map['reference_number'] as String?,
       paymentDate: map['payment_date'],
       notes: map['notes'],
       createdBy: map['created_by'],

@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import '../../models/user.dart';
 import '../../core/auth/auth_service.dart';
 import '../../core/constants/permissions.dart';
+import '../../services/driver_service.dart';
+import '../../models/driver.dart';
 import '../../services/backup_service.dart';
 
 class UsersScreen extends StatefulWidget {
@@ -17,6 +19,7 @@ class UsersScreen extends StatefulWidget {
 
 class _UsersScreenState extends State<UsersScreen> {
   final AuthService _authService = AuthService();
+  final DriverService _driverService = DriverService();
   final BackupService _backupService = BackupService();
 
   late Future<List<User>> _future;
@@ -158,20 +161,8 @@ class _UsersScreenState extends State<UsersScreen> {
                     'الدور: ${user.role}',
                   ),
                   isThreeLine: true,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: 'تعديل المستخدم',
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => _showEditUserDialog(user),
-                      ),
-                      IconButton(
-                        tooltip: 'الصلاحيات',
-                        icon: const Icon(Icons.settings),
-                        onPressed: () => _showPermissionsDialog(user),
-                      ),
-                    ],
+                  trailing: const Icon(
+                    Icons.settings,
                   ),
                   onTap: () => _showPermissionsDialog(user),
                 );
@@ -217,323 +208,245 @@ class _UsersScreenState extends State<UsersScreen> {
     final passwordCtrl = TextEditingController();
     final fullNameCtrl = TextEditingController();
 
-    String role = 'deputy_manager';
+    String role = 'driver';
+    int? selectedDriverId;
     bool isSaving = false;
+    List<Driver> drivers = [];
+
+    try {
+      drivers = await _driverService.getAllDrivers();
+    } catch (_) {}
+
+    if (!mounted) return;
 
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            Future<void> save() async {
-              if (isSaving) return;
+            final usedDriverIds = <int>{};
 
-              final username = usernameCtrl.text.trim();
-              final email = emailCtrl.text.trim();
-              final password = passwordCtrl.text;
-              final fullName = fullNameCtrl.text.trim();
+            return FutureBuilder<List<User>>(
+              future: _authService.getAllUsers(),
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  for (final u in snapshot.data!) {
+                    if (u.driverId != null) {
+                      usedDriverIds.add(u.driverId!);
+                    }
+                  }
+                }
 
-              if (username.isEmpty ||
-                  password.isEmpty ||
-                  fullName.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('يرجى إكمال جميع الحقول المطلوبة'),
-                  ),
-                );
-                return;
-              }
+                final availableDrivers = drivers.where((driver) {
+                  return driver.id != null &&
+                      (!usedDriverIds.contains(driver.id) ||
+                          driver.id == selectedDriverId);
+                }).toList();
 
-              if (password.length < 6) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
-                  ),
-                );
-                return;
-              }
+                Future<void> save() async {
+                  if (isSaving) return;
 
-              setDialogState(() => isSaving = true);
+                  final username = usernameCtrl.text.trim();
+                  final email = emailCtrl.text.trim();
+                  final password = passwordCtrl.text;
+                  final fullName = fullNameCtrl.text.trim();
 
-              try {
-                final permissions = role == 'admin'
-                    ? DefaultPermissions.admin()
-                    : DefaultPermissions.deputyManager();
-
-                await _authService.createUser(
-                  username: username,
-                  password: password,
-                  firebaseEmail: email,
-                  fullName: fullName,
-                  role: role,
-                  driverId: null,
-                  permissions: permissions,
-                );
-
-                if (!context.mounted) return;
-
-                Navigator.pop(context);
-                _refresh();
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('تم إنشاء المستخدم بنجاح'),
-                  ),
-                );
-              } catch (e) {
-                if (!context.mounted) return;
-
-                setDialogState(() => isSaving = false);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('حدث خطأ أثناء إنشاء المستخدم:\n$e'),
-                  ),
-                );
-              }
-            }
-
-            return AlertDialog(
-              title: const Text('إضافة مستخدم'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: fullNameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'الاسم الكامل *',
+                  if (username.isEmpty ||
+                      password.isEmpty ||
+                      fullName.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('يرجى إكمال جميع الحقول المطلوبة'),
                       ),
-                    ),
-                    TextField(
-                      controller: usernameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'اسم المستخدم *',
+                    );
+                    return;
+                  }
+
+                  if (password.length < 6) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content:
+                            Text('كلمة المرور يجب أن تكون 6 أحرف على الأقل'),
                       ),
-                    ),
-                    TextField(
-                      controller: emailCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'البريد الإلكتروني لـ Firebase (اختياري)',
+                    );
+                    return;
+                  }
+
+                  if (role == 'driver' && selectedDriverId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('يرجى اختيار السائق'),
                       ),
-                    ),
-                    TextField(
-                      controller: passwordCtrl,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'كلمة المرور *',
+                    );
+                    return;
+                  }
+
+                  setDialogState(() => isSaving = true);
+
+                  try {
+                    Map<String, bool> permissions;
+
+                    if (role == 'driver') {
+                      permissions = DefaultPermissions.driver();
+                    } else {
+                      permissions = DefaultPermissions.deputyManager();
+                    }
+
+                    await _authService.createUser(
+                      username: username,
+                      password: password,
+                      firebaseEmail: email,
+                      fullName: fullName,
+                      role: role,
+                      driverId: role == 'driver' ? selectedDriverId : null,
+                      permissions: permissions,
+                    );
+
+                    if (!context.mounted) return;
+
+                    Navigator.pop(context);
+                    _refresh();
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('تم إنشاء المستخدم بنجاح'),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      initialValue: role,
-                      decoration: const InputDecoration(
-                        labelText: 'الدور',
-                        border: OutlineInputBorder(),
+                    );
+                  } catch (e) {
+                    if (!context.mounted) return;
+
+                    setDialogState(() => isSaving = false);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('حدث خطأ أثناء إنشاء المستخدم:\n$e'),
                       ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'admin',
-                          child: Text('مدير'),
+                    );
+                  }
+                }
+
+                return AlertDialog(
+                  title: const Text('إضافة مستخدم'),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: fullNameCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'الاسم الكامل *',
+                          ),
                         ),
-                        DropdownMenuItem(
-                          value: 'deputy_manager',
-                          child: Text('نائب مدير'),
+                        TextField(
+                          controller: usernameCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'اسم المستخدم *',
+                          ),
                         ),
+                        TextField(
+                          controller: emailCtrl,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'البريد الإلكتروني لـ Firebase (اختياري)',
+                          ),
+                        ),
+                        TextField(
+                          controller: passwordCtrl,
+                          obscureText: true,
+                          decoration: const InputDecoration(
+                            labelText: 'كلمة المرور *',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: role,
+                          decoration: const InputDecoration(
+                            labelText: 'الدور',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'driver',
+                              child: Text('سائق'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'deputy_manager',
+                              child: Text('نائب مدير'),
+                            ),
+                          ],
+                          onChanged: isSaving
+                              ? null
+                              : (value) {
+                                  if (value == null) return;
+                                  setDialogState(() {
+                                    role = value;
+                                    selectedDriverId = null;
+                                  });
+                                },
+                        ),
+                        if (role == 'driver') ...[
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<int>(
+                            initialValue: availableDrivers.any(
+                              (d) => d.id == selectedDriverId,
+                            )
+                                ? selectedDriverId
+                                : null,
+                            decoration: const InputDecoration(
+                              labelText: 'السائق المرتبط بالحساب *',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: availableDrivers.map((driver) {
+                              return DropdownMenuItem<int>(
+                                value: driver.id,
+                                child: Text(driver.name),
+                              );
+                            }).toList(),
+                            onChanged: isSaving
+                                ? null
+                                : (value) {
+                                    setDialogState(() {
+                                      selectedDriverId = value;
+                                    });
+                                  },
+                          ),
+                          if (availableDrivers.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text(
+                                'لا يوجد سائقون متاحون للربط',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                        ],
                       ],
-                      onChanged: isSaving
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setDialogState(() {
-                                role = value;
-                              });
-                            },
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: isSaving ? null : () => Navigator.pop(context),
+                      child: const Text('إلغاء'),
+                    ),
+                    FilledButton(
+                      onPressed: isSaving ? null : save,
+                      child: isSaving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text('حفظ'),
                     ),
                   ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSaving
-                      ? null
-                      : () => Navigator.pop(dialogContext),
-                  child: const Text('إلغاء'),
-                ),
-                FilledButton(
-                  onPressed: isSaving ? null : save,
-                  child: isSaving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text('حفظ'),
-                ),
-              ],
+                );
+              },
             );
           },
         );
       },
     );
-
-    usernameCtrl.dispose();
-    emailCtrl.dispose();
-    passwordCtrl.dispose();
-    fullNameCtrl.dispose();
-  }
-
-  Future<void> _showEditUserDialog(User user) async {
-    final usernameCtrl = TextEditingController(text: user.username);
-    final fullNameCtrl = TextEditingController(text: user.fullName);
-
-    String role =
-        (user.role == 'admin' || user.role == 'deputy_manager')
-            ? user.role
-            : 'deputy_manager';
-
-    bool isSaving = false;
-
-    try {
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) {
-          return StatefulBuilder(
-            builder: (context, setDialogState) {
-              Future<void> save() async {
-                if (isSaving) return;
-
-                final username = usernameCtrl.text.trim();
-                final fullName = fullNameCtrl.text.trim();
-
-                if (username.isEmpty || fullName.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('يرجى إدخال الاسم الكامل واسم المستخدم'),
-                    ),
-                  );
-                  return;
-                }
-
-                setDialogState(() => isSaving = true);
-
-                try {
-                  final updated = await _authService.updateUser(
-                    userId: user.id!,
-                    username: username,
-                    fullName: fullName,
-                    role: role,
-                  );
-
-                  if (!context.mounted) return;
-
-                  Navigator.pop(dialogContext);
-
-                  if (!mounted) return;
-
-                  _refresh();
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        updated
-                            ? 'تم تعديل بيانات المستخدم بنجاح'
-                            : 'تعذر تعديل بيانات المستخدم',
-                      ),
-                    ),
-                  );
-                } catch (e) {
-                  if (!context.mounted) return;
-
-                  setDialogState(() => isSaving = false);
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('حدث خطأ أثناء تعديل المستخدم:\n$e'),
-                    ),
-                  );
-                }
-              }
-
-              return AlertDialog(
-                title: Text('تعديل المستخدم: ${user.fullName}'),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: fullNameCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'الاسم الكامل *',
-                        ),
-                      ),
-                      TextField(
-                        controller: usernameCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'اسم المستخدم *',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: role,
-                        decoration: const InputDecoration(
-                          labelText: 'الدور',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'admin',
-                            child: Text('مدير'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'deputy_manager',
-                            child: Text('نائب مدير'),
-                          ),
-                        ],
-                        onChanged: isSaving
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setDialogState(() {
-                                  role = value;
-                                });
-                              },
-                      ),
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: isSaving
-                        ? null
-                        : () => Navigator.pop(dialogContext),
-                    child: const Text('إلغاء'),
-                  ),
-                  FilledButton(
-                    onPressed: isSaving ? null : save,
-                    child: isSaving
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text('حفظ'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-    } finally {
-      usernameCtrl.dispose();
-      fullNameCtrl.dispose();
-    }
   }
 
   Future<void> _setRecoveryCode(User user) async {
@@ -753,6 +666,31 @@ class _UsersScreenState extends State<UsersScreen> {
                       user,
                       PermissionKeys.suppliersDelete,
                       'حذف مورد',
+                    ),
+                    const Divider(),
+                    _buildCheckbox(
+                      setDialogState,
+                      user,
+                      PermissionKeys.driversView,
+                      'مشاهدة السائقين',
+                    ),
+                    _buildCheckbox(
+                      setDialogState,
+                      user,
+                      PermissionKeys.driversAdd,
+                      'إضافة سائق',
+                    ),
+                    _buildCheckbox(
+                      setDialogState,
+                      user,
+                      PermissionKeys.driversEdit,
+                      'تعديل السائقين',
+                    ),
+                    _buildCheckbox(
+                      setDialogState,
+                      user,
+                      PermissionKeys.driversDelete,
+                      'حذف السائقين',
                     ),
                     const Divider(),
                     _buildCheckbox(

@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/sale.dart';
-import '../../services/sale_service.dart';
 import '../../core/auth/user_provider.dart';
+import '../../models/client.dart';
+import '../../models/sale.dart';
+import '../../models/supplier.dart';
+import '../../services/client_service.dart';
+import '../../services/sale_service.dart';
+import '../../services/supplier_service.dart';
 
 class SalesScreen extends StatefulWidget {
   const SalesScreen({super.key});
@@ -13,19 +17,391 @@ class SalesScreen extends StatefulWidget {
 }
 
 class _SalesScreenState extends State<SalesScreen> {
-  final SaleService _service = SaleService();
-  late Future<List<Sale>> _future;
+  final _formKey = GlobalKey<FormState>();
+
+  final _quantityController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _notesController = TextEditingController();
+
+  final _saleService = SaleService();
+  final _clientService = ClientService();
+  final _supplierService = SupplierService();
+
+  List<Client> _clients = [];
+  List<Supplier> _suppliers = [];
+  List<Sale> _sales = [];
+
+  int? _selectedClientId;
+  int? _selectedSupplierId;
+
+  DateTime _selectedDate = DateTime.now();
+  String _paymentStatus = 'paid';
+
+  bool _loading = true;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _future = _service.getAllSales();
+    _loadData();
+    _quantityController.addListener(_refreshTotal);
+    _priceController.addListener(_refreshTotal);
   }
 
-  void _refresh() {
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    _priceController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final clients = await _clientService.getAllClients();
+      final suppliers = await _supplierService.getAllSuppliers();
+      final sales = await _saleService.getAllSales();
+
+      if (!mounted) return;
+
+      setState(() {
+        _clients = clients;
+        _suppliers = suppliers;
+        _sales = sales;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _loading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تحميل بيانات المبيعات: $e')),
+      );
+    }
+  }
+
+  void _refreshTotal() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  double get _total {
+    final quantity = int.tryParse(_quantityController.text.trim()) ?? 0;
+    final price = double.tryParse(_priceController.text.trim()) ?? 0;
+    return quantity * price;
+  }
+
+  String _formatNumber(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _paymentLabel(String value) {
+    switch (value) {
+      case 'paid':
+        return 'مدفوع';
+      case 'partial':
+        return 'مدفوع جزئيًا';
+      case 'unpaid':
+        return 'آجل / غير مدفوع';
+      default:
+        return value;
+    }
+  }
+
+  String _supplierName(int? id) {
+    if (id == null) return 'غير محدد';
+
+    for (final supplier in _suppliers) {
+      if (supplier.id == id) return supplier.name;
+    }
+
+    return 'مورد رقم $id';
+  }
+
+  String _clientName(int? id) {
+    if (id == null) return 'بيع نقدي / عميل غير مسجل';
+
+    for (final client in _clients) {
+      if (client.id == id) return client.name;
+    }
+
+    return 'عميل رقم $id';
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      locale: const Locale('ar'),
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
+  Future<void> _openSuppliers() async {
+    await Navigator.of(context).pushNamed('/suppliers');
+
+    if (!mounted) return;
+
+    await _loadData();
+  }
+
+  Future<void> _openClients() async {
+    await Navigator.of(context).pushNamed('/clients');
+
+    if (!mounted) return;
+
+    await _loadData();
+  }
+
+  Future<void> _saveSale() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final user = context.read<UserProvider>().currentUser;
+
+    if (user == null || user.id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يجب تسجيل الدخول قبل حفظ البيع'),
+        ),
+      );
+      return;
+    }
+
+    if (_selectedSupplierId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى اختيار المورد أولًا'),
+        ),
+      );
+      return;
+    }
+
+    final quantity = int.tryParse(_quantityController.text.trim());
+    final price = double.tryParse(_priceController.text.trim());
+
+    if (quantity == null || quantity <= 0) {
+      return;
+    }
+
+    if (price == null || price < 0) {
+      return;
+    }
+
+    final total = quantity * price;
+    final now = DateTime.now().toIso8601String();
+
     setState(() {
-      _future = _service.getAllSales();
+      _saving = true;
     });
+
+    try {
+      final sale = Sale(
+        syncId: 'sale_${DateTime.now().microsecondsSinceEpoch}',
+        saleNumber: 'S-${DateTime.now().millisecondsSinceEpoch}',
+        clientId: _selectedClientId,
+        tankId: null,
+        driverId: user.driverId,
+        supplierId: _selectedSupplierId!,
+        units: quantity,
+        salePrice: price,
+        totalAmount: total,
+        costAmount: 0,
+        profitAmount: total,
+        saleDate: _formatDate(_selectedDate),
+        paymentStatus: _paymentStatus,
+        notes: _notesController.text.trim().isEmpty
+            ? null
+            : _notesController.text.trim(),
+        createdBy: user.id!,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await _saleService.addSale(sale);
+
+      if (!mounted) return;
+
+      await _loadData();
+
+      _showReceipt(
+        saleNumber: sale.saleNumber ?? '-',
+        supplierName: _supplierName(sale.supplierId),
+        clientName: _clientName(sale.clientId),
+        quantity: quantity,
+        price: price,
+        total: total,
+        date: sale.saleDate,
+        paymentStatus: sale.paymentStatus,
+      );
+
+      _clearForm();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر حفظ البيع: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  void _clearForm() {
+    _quantityController.clear();
+    _priceController.clear();
+    _notesController.clear();
+
+    setState(() {
+      _selectedClientId = null;
+      _selectedSupplierId = null;
+      _selectedDate = DateTime.now();
+      _paymentStatus = 'paid';
+    });
+  }
+
+  void _showReceipt({
+    required String saleNumber,
+    required String supplierName,
+    required String clientName,
+    required int quantity,
+    required double price,
+    required double total,
+    required String date,
+    required String paymentStatus,
+  }) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.receipt_long),
+              SizedBox(width: 8),
+              Text('إيصال البيع'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'رقم البيع: $saleNumber',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const Divider(),
+                  _receiptRow('المورد', supplierName),
+                  _receiptRow('العميل', clientName),
+                  _receiptRow('الوحدة', 'وحدة'),
+                  _receiptRow('الكمية', '$quantity'),
+                  _receiptRow('سعر الوحدة', _formatNumber(price)),
+                  _receiptRow('التاريخ', date),
+                  _receiptRow(
+                    'حالة الدفع',
+                    _paymentLabel(paymentStatus),
+                  ),
+                  const Divider(),
+                  _receiptRow(
+                    'الإجمالي',
+                    _formatNumber(total),
+                    bold: true,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.check),
+              label: const Text('تم'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _receiptRow(
+    String title,
+    String value, {
+    bool bold = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Icon(icon),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _decoration(String label, {String? hint}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      border: const OutlineInputBorder(),
+      filled: true,
+    );
   }
 
   @override
@@ -33,505 +409,290 @@ class _SalesScreenState extends State<SalesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('المبيعات'),
+        actions: [
+          IconButton(
+            onPressed: _loading ? null : _loadData,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'تحديث',
+          ),
+        ],
       ),
-      body: FutureBuilder<List<Sale>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadData,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _buildSaleForm(),
+                  const SizedBox(height: 24),
+                  _buildSalesList(),
+                ],
+              ),
+            ),
+    );
+  }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('حدث خطأ: ${snapshot.error}'),
-            );
-          }
-
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
-              child: Text('لا توجد مبيعات'),
-            );
-          }
-
-          final sales = snapshot.data!;
-
-          return ListView.builder(
-            itemCount: sales.length,
-            itemBuilder: (context, index) {
-              final sale = sales[index];
-
-              return Card(
-                margin: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
+  Widget _buildSaleForm() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _sectionTitle('بيانات البيع', Icons.point_of_sale),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      initialValue: _selectedSupplierId,
+                      decoration: _decoration('المورد ⭐'),
+                      hint: const Text('اختر المورد'),
+                      items: _suppliers
+                          .where((s) => s.id != null)
+                          .map(
+                            (supplier) => DropdownMenuItem<int>(
+                              value: supplier.id!,
+                              child: Text(supplier.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedSupplierId = value;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null) {
+                          return 'المورد مطلوب';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: _openSuppliers,
+                    tooltip: 'إضافة مورد',
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int?>(
+                      initialValue: _selectedClientId,
+                      decoration: _decoration('العميل (اختياري)'),
+                      hint: const Text('بيع نقدي / بدون عميل'),
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text('بيع نقدي / عميل غير مسجل'),
+                        ),
+                        ..._clients.where((c) => c.id != null).map(
+                              (client) => DropdownMenuItem<int?>(
+                                value: client.id!,
+                                child: Text(
+                                  client.phone == null ||
+                                          client.phone!.trim().isEmpty
+                                      ? client.name
+                                      : '${client.name} - ${client.phone}',
+                                ),
+                              ),
+                            ),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedClientId = value;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: _openClients,
+                    tooltip: 'إضافة عميل',
+                    icon: const Icon(Icons.person_add),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                readOnly: true,
+                initialValue: 'وحدة',
+                decoration: _decoration('الوحدة'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _quantityController,
+                keyboardType: TextInputType.number,
+                decoration: _decoration('الكمية'),
+                validator: (value) {
+                  final number = int.tryParse(value?.trim() ?? '');
+                  if (number == null || number <= 0) {
+                    return 'أدخل كمية صحيحة';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _priceController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
                 ),
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.shopping_cart),
-                  ),
-                  title: Text(
-                    sale.saleNumber?.isNotEmpty == true
-                        ? 'فاتورة ${sale.saleNumber}'
-                        : 'بيع #${sale.id}',
-                  ),
-                  subtitle: Text(
-                    'العميل: ${sale.clientId} | '
-                    'الصهريج: ${sale.tankId}\n'
-                    'الوحدات: ${sale.units} | '
-                    'الإجمالي: ${sale.totalAmount.toStringAsFixed(2)} ريال\n'
-                    'التاريخ: ${sale.saleDate} | '
-                    'الحالة: ${_paymentStatusText(sale.paymentStatus)}',
-                  ),
-                  isThreeLine: true,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                decoration: _decoration('سعر الوحدة'),
+                validator: (value) {
+                  final number = double.tryParse(value?.trim() ?? '');
+                  if (number == null || number < 0) {
+                    return 'أدخل سعرًا صحيحًا';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: _pickDate,
+                borderRadius: BorderRadius.circular(4),
+                child: InputDecorator(
+                  decoration: _decoration('التاريخ'),
+                  child: Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => _showSaleDialog(sale),
+                      Expanded(
+                        child: Text(_formatDate(_selectedDate)),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () => _confirmDelete(sale),
+                      const Icon(Icons.calendar_month),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _paymentStatus,
+                decoration: _decoration('حالة الدفع'),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'paid',
+                    child: Text('مدفوع'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'partial',
+                    child: Text('مدفوع جزئيًا'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'unpaid',
+                    child: Text('آجل / غير مدفوع'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _paymentStatus = value;
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'الإجمالي',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _formatNumber(_total),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
                 ),
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showSaleDialog(null),
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  String _paymentStatusText(String status) {
-    switch (status) {
-      case 'paid':
-        return 'مدفوع';
-      case 'partial':
-        return 'جزئي';
-      case 'unpaid':
-        return 'غير مدفوع';
-      default:
-        return status;
-    }
-  }
-
-  void _showSaleDialog(Sale? existing) {
-    final saleNumberCtrl = TextEditingController(
-      text: existing?.saleNumber ?? '',
-    );
-
-    final clientIdCtrl = TextEditingController(
-      text: existing?.clientId.toString() ?? '',
-    );
-
-    final tankIdCtrl = TextEditingController(
-      text: existing?.tankId.toString() ?? '',
-    );
-
-    final driverIdCtrl = TextEditingController(
-      text: existing?.driverId?.toString() ?? '',
-    );
-
-    final supplierIdCtrl = TextEditingController(
-      text: existing?.supplierId?.toString() ?? '',
-    );
-
-    final unitsCtrl = TextEditingController(
-      text: existing?.units.toString() ?? '',
-    );
-
-    final salePriceCtrl = TextEditingController(
-      text: existing?.salePrice.toString() ?? '',
-    );
-
-    final costAmountCtrl = TextEditingController(
-      text: existing?.costAmount.toString() ?? '',
-    );
-
-    final saleDateCtrl = TextEditingController(
-      text: existing?.saleDate ??
-          DateTime.now().toIso8601String().split('T').first,
-    );
-
-    final notesCtrl = TextEditingController(
-      text: existing?.notes ?? '',
-    );
-
-    String paymentStatus = existing?.paymentStatus ?? 'unpaid';
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(
-                existing == null ? 'إضافة مبيعة' : 'تعديل مبيعة',
               ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: saleNumberCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'رقم الفاتورة',
-                        hintText: 'اختياري',
-                      ),
-                    ),
-                    TextField(
-                      controller: clientIdCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'رقم العميل *',
-                      ),
-                    ),
-                    TextField(
-                      controller: tankIdCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'رقم الصهريج *',
-                      ),
-                    ),
-                    TextField(
-                      controller: driverIdCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'رقم السائق',
-                        hintText: 'اختياري',
-                      ),
-                    ),
-                    TextField(
-                      controller: supplierIdCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'رقم المورد',
-                        hintText: 'اختياري',
-                      ),
-                    ),
-                    TextField(
-                      controller: unitsCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'عدد الوحدات *',
-                      ),
-                    ),
-                    TextField(
-                      controller: salePriceCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'سعر البيع للوحدة *',
-                      ),
-                    ),
-                    TextField(
-                      controller: costAmountCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'إجمالي التكلفة *',
-                      ),
-                    ),
-                    TextField(
-                      controller: saleDateCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'تاريخ البيع *',
-                        hintText: 'YYYY-MM-DD',
-                      ),
-                    ),
-                    DropdownButtonFormField<String>(
-                      initialValue: paymentStatus,
-                      decoration: const InputDecoration(
-                        labelText: 'حالة الدفع',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'paid',
-                          child: Text('مدفوع'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'partial',
-                          child: Text('جزئي'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'unpaid',
-                          child: Text('غير مدفوع'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setDialogState(() {
-                            paymentStatus = value;
-                          });
-                        }
-                      },
-                    ),
-                    TextField(
-                      controller: notesCtrl,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'ملاحظات',
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _notesController,
+                maxLines: 2,
+                decoration: _decoration('ملاحظات (اختياري)'),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _saving ? null : _saveSale,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.receipt_long),
+                label: Text(
+                  _saving ? 'جارٍ حفظ البيع...' : 'حفظ البيع وإصدار الإيصال',
+                ),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('إلغاء'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final clientId = int.tryParse(
-                      clientIdCtrl.text.trim(),
-                    );
-
-                    final tankId = int.tryParse(
-                      tankIdCtrl.text.trim(),
-                    );
-
-                    final driverText = driverIdCtrl.text.trim();
-                    final driverId = driverText.isEmpty
-                        ? null
-                        : int.tryParse(driverText);
-
-                    final supplierText = supplierIdCtrl.text.trim();
-                    final supplierId = supplierText.isEmpty
-                        ? null
-                        : int.tryParse(supplierText);
-
-                    final units = int.tryParse(
-                      unitsCtrl.text.trim(),
-                    );
-
-                    final salePrice = double.tryParse(
-                      salePriceCtrl.text.trim(),
-                    );
-
-                    final costAmount = double.tryParse(
-                      costAmountCtrl.text.trim(),
-                    );
-
-                    final saleDate = saleDateCtrl.text.trim();
-
-                    if (clientId == null || clientId <= 0) {
-                      _showDialogError(
-                        dialogContext,
-                        'يرجى إدخال رقم عميل صحيح',
-                      );
-                      return;
-                    }
-
-                    if (tankId == null || tankId <= 0) {
-                      _showDialogError(
-                        dialogContext,
-                        'يرجى إدخال رقم صهريج صحيح',
-                      );
-                      return;
-                    }
-
-                    if (driverText.isNotEmpty && driverId == null) {
-                      _showDialogError(
-                        dialogContext,
-                        'رقم السائق غير صحيح',
-                      );
-                      return;
-                    }
-
-                    if (supplierText.isNotEmpty &&
-                        supplierId == null) {
-                      _showDialogError(
-                        dialogContext,
-                        'رقم المورد غير صحيح',
-                      );
-                      return;
-                    }
-
-                    if (units == null || units <= 0) {
-                      _showDialogError(
-                        dialogContext,
-                        'يرجى إدخال عدد وحدات صحيح أكبر من صفر',
-                      );
-                      return;
-                    }
-
-                    if (salePrice == null || salePrice < 0) {
-                      _showDialogError(
-                        dialogContext,
-                        'يرجى إدخال سعر بيع صحيح',
-                      );
-                      return;
-                    }
-
-                    if (costAmount == null || costAmount < 0) {
-                      _showDialogError(
-                        dialogContext,
-                        'يرجى إدخال إجمالي تكلفة صحيح',
-                      );
-                      return;
-                    }
-
-                    if (saleDate.isEmpty) {
-                      _showDialogError(
-                        dialogContext,
-                        'يرجى إدخال تاريخ البيع',
-                      );
-                      return;
-                    }
-
-                    final user =
-                        context.read<UserProvider>().currentUser;
-
-                    if (user?.id == null) {
-                      _showDialogError(
-                        dialogContext,
-                        'لا يوجد مستخدم مسجل لإنشاء المبيعة',
-                      );
-                      return;
-                    }
-
-                    final totalAmount = units * salePrice;
-                    final profitAmount = totalAmount - costAmount;
-                    final now = DateTime.now().toIso8601String();
-
-                    final sale = Sale(
-                      id: existing?.id,
-                      saleNumber:
-                          saleNumberCtrl.text.trim().isEmpty
-                              ? null
-                              : saleNumberCtrl.text.trim(),
-                      clientId: clientId,
-                      tankId: tankId,
-                      driverId: driverId,
-                      supplierId: supplierId,
-                      units: units,
-                      salePrice: salePrice,
-                      totalAmount: totalAmount,
-                      costAmount: costAmount,
-                      profitAmount: profitAmount,
-                      saleDate: saleDate,
-                      paymentStatus: paymentStatus,
-                      notes: notesCtrl.text.trim().isEmpty
-                          ? null
-                          : notesCtrl.text.trim(),
-                      createdBy: existing?.createdBy ?? user!.id!,
-                      createdAt: existing?.createdAt ?? now,
-                      updatedAt: now,
-                    );
-
-                    try {
-                      if (existing == null) {
-                        await _service.addSale(sale);
-                      } else {
-                        await _service.updateSale(sale);
-                      }
-
-                      if (!mounted || !dialogContext.mounted) return;
-
-                      Navigator.pop(dialogContext);
-                      _refresh();
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            existing == null
-                                ? 'تمت إضافة المبيعة بنجاح'
-                                : 'تم تعديل المبيعة بنجاح',
-                          ),
-                        ),
-                      );
-                    } catch (e) {
-                      if (!dialogContext.mounted) return;
-
-                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'حدث خطأ أثناء الحفظ: $e',
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  child: const Text('حفظ'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _showDialogError(
-    BuildContext dialogContext,
-    String message,
-  ) {
-    ScaffoldMessenger.of(dialogContext).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
-  }
-
-  void _confirmDelete(Sale sale) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('تأكيد الحذف'),
-          content: Text(
-            'هل تريد حذف المبيعة '
-            '"${sale.saleNumber ?? sale.id}"؟',
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('إلغاء'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  await _service.deleteSale(sale.id!);
+        ),
+      ),
+    );
+  }
 
-                  if (!mounted || !dialogContext.mounted) return;
+  Widget _buildSalesList() {
+    if (_sales.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: Text('لا توجد مبيعات حتى الآن'),
+          ),
+        ),
+      );
+    }
 
-                  Navigator.pop(dialogContext);
-                  _refresh();
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('تم حذف المبيعة بنجاح'),
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _sectionTitle('آخر المبيعات', Icons.history),
+            ..._sales.take(20).map(
+                  (sale) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const CircleAvatar(
+                      child: Icon(Icons.receipt_long),
                     ),
-                  );
-                } catch (e) {
-                  if (!dialogContext.mounted) return;
-
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'حدث خطأ أثناء الحذف: $e',
-                      ),
+                    title: Text(
+                      '${_clientName(sale.clientId)} — ${_formatNumber(sale.totalAmount)}',
                     ),
-                  );
-                }
-              },
-              child: const Text('حذف'),
-            ),
+                    subtitle: Text(
+                      '${_supplierName(sale.supplierId)} • '
+                      '${sale.saleDate} • '
+                      '${_paymentLabel(sale.paymentStatus)}',
+                    ),
+                  ),
+                ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }

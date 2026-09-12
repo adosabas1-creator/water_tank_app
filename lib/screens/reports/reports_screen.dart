@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../services/sale_service.dart';
-import '../../services/filling_operation_service.dart';
 import '../../services/expense_service.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -13,14 +12,11 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   final SaleService _saleService = SaleService();
-  final FillingOperationService _fillingService =
-      FillingOperationService();
   final ExpenseService _expenseService = ExpenseService();
 
   double _totalSales = 0;
-  double _totalPurchases = 0;
   double _totalExpenses = 0;
-  double _profit = 0;
+  double _netRevenue = 0;
 
   bool _isLoading = true;
   String? _error;
@@ -41,20 +37,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     try {
       final sales = await _saleService.getAllSales();
-      final fillings =
-          await _fillingService.getAllOperations();
-      final expenses =
-          await _expenseService.getAllExpenses();
+      final expenses = await _expenseService.getAllExpenses();
 
       final totalSales = sales.fold<double>(
         0,
         (sum, sale) => sum + sale.totalAmount,
-      );
-
-      final totalPurchases = fillings.fold<double>(
-        0,
-        (sum, filling) =>
-            sum + (filling.units * filling.purchasePrice),
       );
 
       final totalExpenses = expenses.fold<double>(
@@ -62,16 +49,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
         (sum, expense) => sum + expense.amount,
       );
 
-      final profit =
-          totalSales - totalPurchases - totalExpenses;
+      final netRevenue = totalSales - totalExpenses;
 
       if (!mounted) return;
 
       setState(() {
         _totalSales = totalSales;
-        _totalPurchases = totalPurchases;
         _totalExpenses = totalExpenses;
-        _profit = profit;
+        _netRevenue = netRevenue;
         _isLoading = false;
       });
     } catch (e) {
@@ -114,11 +99,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         Icons.shopping_cart,
                       ),
                       _buildCard(
-                        'إجمالي المشتريات',
-                        _totalPurchases,
-                        Icons.local_gas_station,
-                      ),
-                      _buildCard(
                         'إجمالي المصروفات',
                         _totalExpenses,
                         Icons.money_off,
@@ -127,12 +107,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       const Divider(),
                       const SizedBox(height: 8),
                       _buildCard(
-                        'الأرباح',
-                        _profit,
+                        'صافي الإيرادات',
+                        _netRevenue,
                         Icons.trending_up,
-                        color: _profit >= 0
-                            ? Colors.green
-                            : Colors.red,
+                        color: _netRevenue >= 0 ? Colors.green : Colors.red,
                       ),
                     ],
                   ),

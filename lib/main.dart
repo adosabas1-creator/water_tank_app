@@ -7,9 +7,6 @@ import 'core/database/seed.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/clients/clients_screen.dart';
 import 'screens/suppliers/suppliers_screen.dart';
-import 'screens/drivers/drivers_screen.dart';
-import 'screens/tanks/tanks_screen.dart';
-import 'screens/filling/filling_screen.dart';
 import 'screens/sales/sales_screen.dart';
 import 'screens/payments/payments_screen.dart';
 import 'screens/expenses/expenses_screen.dart';
@@ -73,9 +70,6 @@ class MyApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreen(),
         '/clients': (context) => const ClientsScreen(),
         '/suppliers': (context) => const SuppliersScreen(),
-        '/drivers': (context) => const DriversScreen(),
-        '/tanks': (context) => const TanksScreen(),
-        '/filling': (context) => const FillingScreen(),
         '/sales': (context) => const SalesScreen(),
         '/payments': (context) => const PaymentsScreen(),
         '/expenses': (context) => const ExpensesScreen(),
@@ -88,7 +82,6 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
 
 Future<void> _initializeDatabase() async {
   try {

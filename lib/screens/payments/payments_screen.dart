@@ -53,6 +53,9 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     );
 
     String paymentType = payment?.paymentType ?? 'client_payment';
+    String paymentMethod = payment?.paymentMethod ?? 'cash';
+    final referenceNumberController =
+        TextEditingController(text: payment?.referenceNumber ?? '');
 
     DateTime selectedDate = payment != null
         ? DateTime.tryParse(payment.paymentDate) ?? DateTime.now()
@@ -91,20 +94,23 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
               });
 
               try {
-                final referenceId =
-                    int.parse(referenceController.text.trim());
+                final referenceId = int.parse(referenceController.text.trim());
 
-                final amount =
-                    double.parse(amountController.text.trim());
+                final amount = double.parse(amountController.text.trim());
 
                 final now = DateTime.now().toIso8601String();
 
                 if (payment == null) {
                   final newPayment = Payment(
-                               syncId: const Uuid().v4(),
+                    syncId: const Uuid().v4(),
                     paymentType: paymentType,
                     referenceId: referenceId,
                     amount: amount,
+                    paymentMethod: paymentMethod,
+                    referenceNumber:
+                        referenceNumberController.text.trim().isEmpty
+                            ? null
+                            : referenceNumberController.text.trim(),
                     paymentDate: selectedDate.toIso8601String(),
                     notes: notesController.text.trim().isEmpty
                         ? null
@@ -124,6 +130,11 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                     paymentType: paymentType,
                     referenceId: referenceId,
                     amount: amount,
+                    paymentMethod: paymentMethod,
+                    referenceNumber:
+                        referenceNumberController.text.trim().isEmpty
+                            ? null
+                            : referenceNumberController.text.trim(),
                     paymentDate: selectedDate.toIso8601String(),
                     notes: notesController.text.trim().isEmpty
                         ? null
@@ -199,11 +210,11 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                         onChanged: saving
                             ? null
                             : (value) {
-                                if (value == null) return;
-
-                                setDialogState(() {
-                                  paymentType = value;
-                                });
+                                if (value != null) {
+                                  setDialogState(() {
+                                    paymentMethod = value;
+                                  });
+                                }
                               },
                       ),
                       const SizedBox(height: 12),
@@ -216,8 +227,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          final number =
-                              int.tryParse(value?.trim() ?? '');
+                          final number = int.tryParse(value?.trim() ?? '');
 
                           if (number == null || number <= 0) {
                             return 'أدخل رقمًا صحيحًا';
@@ -227,10 +237,45 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                         },
                       ),
                       const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: paymentMethod,
+                        decoration: const InputDecoration(
+                          labelText: 'طريقة الدفع',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'cash', child: Text('نقدي')),
+                          DropdownMenuItem(
+                              value: 'transfer', child: Text('حوالة')),
+                          DropdownMenuItem(
+                              value: 'bank_transfer',
+                              child: Text('تحويل بنكي')),
+                          DropdownMenuItem(value: 'other', child: Text('أخرى')),
+                        ],
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                if (value != null) {
+                                  setDialogState(() {
+                                    paymentMethod = value;
+                                  });
+                                }
+                              },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: referenceNumberController,
+                        enabled: saving == false &&
+                            (paymentMethod == 'transfer' ||
+                                paymentMethod == 'bank_transfer'),
+                        decoration: const InputDecoration(
+                            labelText: 'رقم الحوالة / التحويل',
+                            border: OutlineInputBorder()),
+                      ),
+                      const SizedBox(height: 12),
                       TextFormField(
                         controller: amountController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
+                        keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         enabled: !saving,
@@ -239,8 +284,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          final amount =
-                              double.tryParse(value?.trim() ?? '');
+                          final amount = double.tryParse(value?.trim() ?? '');
 
                           if (amount == null || amount <= 0) {
                             return 'أدخل مبلغًا صحيحًا أكبر من صفر';
@@ -293,9 +337,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: saving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
+                  onPressed:
+                      saving ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('إلغاء'),
                 ),
                 FilledButton(
@@ -322,6 +365,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     referenceController.dispose();
     amountController.dispose();
     notesController.dispose();
+    referenceNumberController.dispose();
   }
 
   Future<void> _deletePayment(Payment payment) async {

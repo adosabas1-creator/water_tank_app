@@ -5,5 +5,5 @@ class AppConstants {
   static const int maxUnitsPerSale = 22; // أقصى عدد وحدات للبيع
   static const int minUnitsPerSale = 1; // أقل عدد وحدات
   static const String localDbName = 'alborai_water_db.db';
-  static const int localDbVersion = 19;
+  static const int localDbVersion = 15;
 }

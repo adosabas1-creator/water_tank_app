@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../models/supplier.dart';
-import '../../services/supplier_service.dart';
-import '../../services/filling_operation_service.dart';
+import 'add_account_transaction_screen.dart';
+import '../../services/account_transaction_service.dart';
 import '../../services/payment_service.dart';
+import '../../services/supplier_service.dart';
 
 class SupplierStatementScreen extends StatefulWidget {
   final int supplierId;
@@ -18,16 +19,13 @@ class SupplierStatementScreen extends StatefulWidget {
       _SupplierStatementScreenState();
 }
 
-class _SupplierStatementScreenState
-    extends State<SupplierStatementScreen> {
+class _SupplierStatementScreenState extends State<SupplierStatementScreen> {
   final SupplierService _supplierService = SupplierService();
-  final FillingOperationService _fillingService =
-      FillingOperationService();
+  final AccountTransactionService _accountService = AccountTransactionService();
   final PaymentService _paymentService = PaymentService();
 
   Supplier? _supplier;
-
-  double _totalPurchases = 0;
+  double _totalTransactions = 0;
   double _totalPayments = 0;
 
   bool _isLoading = true;
@@ -48,32 +46,17 @@ class _SupplierStatementScreenState
     }
 
     try {
-      final supplier =
-          await _supplierService.getSupplierById(
+      final supplier = await _supplierService.getSupplierById(
         widget.supplierId,
       );
 
-      final operations =
-          await _fillingService.getAllOperations();
-
-      final payments =
-          await _paymentService.getPaymentsForSupplier(
-        widget.supplierId,
+      final totalTransactions = await _accountService.getTotalAmount(
+        accountType: 'supplier',
+        referenceId: widget.supplierId,
       );
 
-      final supplierOperations = operations
-          .where(
-            (operation) =>
-                operation.supplierId == widget.supplierId,
-          )
-          .toList();
-
-      final totalPurchases =
-          supplierOperations.fold<double>(
-        0,
-        (sum, operation) =>
-            sum +
-            (operation.units * operation.purchasePrice),
+      final payments = await _paymentService.getPaymentsForSupplier(
+        widget.supplierId,
       );
 
       final totalPayments = payments.fold<double>(
@@ -85,7 +68,7 @@ class _SupplierStatementScreenState
 
       setState(() {
         _supplier = supplier;
-        _totalPurchases = totalPurchases;
+        _totalTransactions = totalTransactions;
         _totalPayments = totalPayments;
         _isLoading = false;
       });
@@ -126,8 +109,7 @@ class _SupplierStatementScreenState
       );
     }
 
-    final remaining =
-        _totalPurchases - _totalPayments;
+    final remaining = _totalTransactions - _totalPayments;
 
     return Scaffold(
       appBar: AppBar(
@@ -135,6 +117,11 @@ class _SupplierStatementScreenState
           'كشف حساب: ${_supplier!.name}',
         ),
         actions: [
+          IconButton(
+            onPressed: _isLoading ? null : _addTransaction,
+            tooltip: 'إضافة حركة',
+            icon: const Icon(Icons.add),
+          ),
           IconButton(
             onPressed: _isLoading ? null : _loadData,
             tooltip: 'تحديث',
@@ -183,8 +170,8 @@ class _SupplierStatementScreenState
             ),
             const SizedBox(height: 20),
             _buildRow(
-              'إجمالي المشتريات',
-              _totalPurchases,
+              'إجمالي الحركات',
+              _totalTransactions,
             ),
             _buildRow(
               'إجمالي المدفوعات',
@@ -198,6 +185,52 @@ class _SupplierStatementScreenState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _addTransaction() async {
+    if (_supplier == null) return;
+
+    final added = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddAccountTransactionScreen(
+          accountType: 'supplier',
+          referenceId: widget.supplierId,
+          accountName: _supplier!.name,
+        ),
+      ),
+    );
+
+    if (added == true && mounted) {
+      await _loadData();
+    }
+  }
+
+  Widget _buildRow(
+    String title,
+    double value, {
+    bool bold = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.bold : null,
+            ),
+          ),
+          Text(
+            '${value.toStringAsFixed(2)} ريال',
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.bold : null,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -226,40 +259,6 @@ class _SupplierStatementScreenState
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildRow(
-    String label,
-    double value, {
-    bool bold = false,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment:
-            MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: bold
-                  ? FontWeight.bold
-                  : FontWeight.normal,
-            ),
-          ),
-          Text(
-            '${value.toStringAsFixed(2)} ريال',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: bold
-                  ? FontWeight.bold
-                  : FontWeight.normal,
-            ),
-          ),
-        ],
       ),
     );
   }

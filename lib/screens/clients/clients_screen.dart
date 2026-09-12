@@ -5,6 +5,7 @@ import '../../models/client.dart';
 import '../../models/operation_log.dart';
 import '../../services/client_service.dart';
 import '../../services/operation_log_service.dart';
+import '../../services/contact_picker_service.dart';
 import '../../core/network/communication_service.dart';
 import '../../core/auth/user_provider.dart';
 import '../../core/auth/permission_service.dart';
@@ -95,6 +96,55 @@ class _ClientsScreenState extends State<ClientsScreen> {
     );
   }
 
+  Future<void> _pickClientContact(
+    TextEditingController nameCtrl,
+    TextEditingController phoneCtrl,
+    BuildContext dialogContext,
+  ) async {
+    try {
+      final contact = await ContactPickerService.pickContact();
+
+      if (!mounted || !dialogContext.mounted) return;
+
+      if (contact == null) {
+        ScaffoldMessenger.of(dialogContext).showSnackBar(
+          const SnackBar(
+            content: Text('لم يتم اختيار جهة اتصال'),
+          ),
+        );
+        return;
+      }
+
+      final name = contact.displayName?.trim() ?? '';
+      final phone =
+          contact.phones.isNotEmpty ? contact.phones.first.number.trim() : '';
+
+      if (name.isNotEmpty) {
+        nameCtrl.text = name;
+      }
+
+      if (phone.isNotEmpty) {
+        phoneCtrl.text = phone;
+      }
+
+      if (name.isEmpty && phone.isEmpty) {
+        ScaffoldMessenger.of(dialogContext).showSnackBar(
+          const SnackBar(
+            content: Text('جهة الاتصال المختارة لا تحتوي على اسم أو رقم هاتف'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted || !dialogContext.mounted) return;
+
+      ScaffoldMessenger.of(dialogContext).showSnackBar(
+        SnackBar(
+          content: Text('تعذر فتح جهات الاتصال: $e'),
+        ),
+      );
+    }
+  }
+
   void _showClientDialog(Client? existing) {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
@@ -111,7 +161,21 @@ class _ClientsScreenState extends State<ClientsScreen> {
                 decoration: const InputDecoration(labelText: 'اسم العميل')),
             TextField(
                 controller: phoneCtrl,
+                keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(labelText: 'الهاتف')),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _pickClientContact(
+                  nameCtrl,
+                  phoneCtrl,
+                  context,
+                ),
+                icon: const Icon(Icons.contacts),
+                label: const Text('اختيار من جهات الاتصال'),
+              ),
+            ),
             TextField(
                 controller: addressCtrl,
                 decoration: const InputDecoration(labelText: 'العنوان')),

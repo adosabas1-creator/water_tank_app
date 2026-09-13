@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:share_plus/share_plus.dart';
 
 import '../../models/client.dart';
 import '../../services/account_transaction_service.dart';
@@ -209,6 +213,147 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
     }
   }
 
+  Future<void> _shareStatementPdf() async {
+    if (_client == null) return;
+
+    try {
+      final regularFontData =
+          await rootBundle.load('assets/fonts/Cairo-Regular.ttf');
+      final boldFontData =
+          await rootBundle.load('assets/fonts/Cairo-Bold.ttf');
+
+      final regularFont = pw.Font.ttf(regularFontData);
+      final boldFont = pw.Font.ttf(boldFontData);
+
+      final document = pw.Document();
+
+      final rows = <List<String>>[
+        ['التاريخ', 'البيان', 'عليه', 'له', 'الرصيد'],
+        ..._entries.map((entry) {
+          final date = DateTime.tryParse(entry.date);
+          final dateText = date == null
+              ? entry.date
+              : '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+          return [
+            dateText,
+            entry.description,
+            entry.debit > 0 ? entry.debit.toStringAsFixed(2) : '-',
+            entry.credit > 0 ? entry.credit.toStringAsFixed(2) : '-',
+            entry.balance.toStringAsFixed(2),
+          ];
+        }),
+      ];
+
+      final balance = _totalDebit - _totalCredit;
+
+      document.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          textDirection: pw.TextDirection.rtl,
+          theme: pw.ThemeData.withFont(
+            base: regularFont,
+            bold: boldFont,
+          ),
+          build: (context) => [
+            pw.Directionality(
+              textDirection: pw.TextDirection.rtl,
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                children: [
+                  pw.Text(
+                    'كشف حساب العميل',
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      font: boldFont,
+                      fontSize: 20,
+                    ),
+                  ),
+                  pw.SizedBox(height: 8),
+                  pw.Text(
+                    'العميل: ${_client!.name}',
+                    style: pw.TextStyle(font: boldFont, fontSize: 14),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'تاريخ الكشف: ${DateTime.now().toString().substring(0, 10)}',
+                    style: pw.TextStyle(font: regularFont, fontSize: 10),
+                  ),
+                  pw.SizedBox(height: 16),
+                  pw.TableHelper.fromTextArray(
+                    headers: rows.first,
+                    data: rows.skip(1).toList(),
+                    headerStyle: pw.TextStyle(
+                      font: boldFont,
+                      fontSize: 9,
+                    ),
+                    cellStyle: pw.TextStyle(
+                      font: regularFont,
+                      fontSize: 8,
+                    ),
+                    headerDecoration:
+                        const pw.BoxDecoration(color: PdfColors.grey300),
+                    cellAlignment: pw.Alignment.center,
+                    headerAlignment: pw.Alignment.center,
+                    border: pw.TableBorder.all(
+                      color: PdfColors.grey,
+                      width: 0.5,
+                    ),
+                    cellPadding: const pw.EdgeInsets.all(4),
+                  ),
+                  pw.SizedBox(height: 16),
+                  pw.Text(
+                    'إجمالي عليه: ${_totalDebit.toStringAsFixed(2)} ريال',
+                    style: pw.TextStyle(font: boldFont, fontSize: 12),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'إجمالي له: ${_totalCredit.toStringAsFixed(2)} ريال',
+                    style: pw.TextStyle(font: boldFont, fontSize: 12),
+                  ),
+                  pw.SizedBox(height: 6),
+                  pw.Text(
+                    balance > 0
+                        ? 'المتبقي عليه: ${balance.toStringAsFixed(2)} ريال'
+                        : balance < 0
+                            ? 'الرصيد له: ${balance.abs().toStringAsFixed(2)} ريال'
+                            : 'الحساب مسدد بالكامل',
+                    style: pw.TextStyle(font: boldFont, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+      final bytes = await document.save();
+      final safeName = _client!.name
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+          .trim();
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              bytes,
+              name: 'كشف_حساب_$safeName.pdf',
+              mimeType: 'application/pdf',
+            ),
+          ],
+          subject: 'كشف حساب العميل ${_client!.name}',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تعذر إنشاء أو مشاركة كشف الحساب: $e'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -268,6 +413,11 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
             ],
           ),
           IconButton(
+            onPressed: _shareStatementPdf,
+            tooltip: 'مشاركة كشف الحساب',
+            icon: const Icon(Icons.share),
+          ),
+          IconButton(
             onPressed: _loadData,
             tooltip: 'تحديث',
             icon: const Icon(Icons.refresh),
@@ -296,14 +446,14 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
                       children: [
                         Expanded(
                           child: _summaryItem(
-                            'مدين',
+                            'عليه',
                             _totalDebit,
                             Icons.arrow_downward,
                           ),
                         ),
                         Expanded(
                           child: _summaryItem(
-                            'دائن',
+                            'له',
                             _totalCredit,
                             Icons.arrow_upward,
                           ),
@@ -417,12 +567,12 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
           children: [
             if (entry.debit > 0)
               Text(
-                'مدين ${entry.debit.toStringAsFixed(2)}',
+                'عليه ${entry.debit.toStringAsFixed(2)}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             if (entry.credit > 0)
               Text(
-                'دائن ${entry.credit.toStringAsFixed(2)}',
+                'له ${entry.credit.toStringAsFixed(2)}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
           ],

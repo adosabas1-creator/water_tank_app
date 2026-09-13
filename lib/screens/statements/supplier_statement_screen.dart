@@ -327,14 +327,14 @@ class _SupplierStatementScreenState extends State<SupplierStatementScreen> {
                       children: [
                         Expanded(
                           child: _summaryItem(
-                            'إجمالي المدين',
+                            'إجمالي عليه',
                             _totalDebit,
                             Icons.arrow_downward,
                           ),
                         ),
                         Expanded(
                           child: _summaryItem(
-                            'إجمالي الدائن (المدفوعات)',
+                            'إجمالي له (المدفوعات)',
                             _totalCredit,
                             Icons.arrow_upward,
                           ),
@@ -431,12 +431,12 @@ class _SupplierStatementScreenState extends State<SupplierStatementScreen> {
           children: [
             if (entry.debit > 0)
               Text(
-                'مدين ${entry.debit.toStringAsFixed(2)}',
+                'عليه ${entry.debit.toStringAsFixed(2)}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             if (entry.credit > 0)
               Text(
-                'دائن ${entry.credit.toStringAsFixed(2)}',
+                'له ${entry.credit.toStringAsFixed(2)}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
           ],

@@ -11,7 +11,7 @@ class SaleService {
     return await db.transaction((txn) async {
       final saleId = await txn.insert('sales', sale.toMap());
 
-      if (sale.clientId != null && sale.clientPaymentStatus == 'credit') {
+      if (sale.clientId != null && sale.clientPaymentStatus == 'unpaid') {
         final now = DateTime.now().toIso8601String();
 
         final transaction = AccountTransaction(

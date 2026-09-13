@@ -27,6 +27,8 @@ class _SupplierStatementScreenState extends State<SupplierStatementScreen> {
 
   Supplier? _supplier;
   bool _isLoading = true;
+  int _debugTransactionCount = 0;
+  int _debugPaymentCount = 0;
   String? _error;
 
   List<_SupplierStatementEntry> _entries = [];
@@ -71,7 +73,13 @@ class _SupplierStatementScreenState extends State<SupplierStatementScreen> {
         widget.supplierId,
       );
 
+      _debugTransactionCount = transactions.length;
+      _debugPaymentCount = payments.length;
+
       final entries = <_SupplierStatementEntry>[];
+
+      debugPrint(
+          'SUPPLIER DEBUG: id=${widget.supplierId}, transactions=${transactions.length}, payments=${payments.length}');
 
       for (final transaction in transactions) {
         entries.add(
@@ -339,11 +347,20 @@ class _SupplierStatementScreenState extends State<SupplierStatementScreen> {
             ),
             const SizedBox(height: 12),
             if (_entries.isEmpty)
-              const Card(
+              Card(
                 child: Padding(
-                  padding: EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(24),
                   child: Center(
-                    child: Text('لا توجد حركات في حساب المورد'),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('لا توجد حركات في حساب المورد'),
+                        const SizedBox(height: 8),
+                        Text('رقم المورد: ${widget.supplierId}'),
+                        Text('حركات الحساب: $_debugTransactionCount'),
+                        Text('دفعات المورد: $_debugPaymentCount'),
+                      ],
+                    ),
                   ),
                 ),
               )

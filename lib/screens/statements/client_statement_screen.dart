@@ -290,18 +290,7 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
                       style: TextStyle(fontSize: 16),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      '${balance.toStringAsFixed(2)} ريال',
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: balance > 0
-                            ? Colors.red
-                            : balance < 0
-                                ? Colors.green
-                                : null,
-                      ),
-                    ),
+                    _buildBalanceDisplay(balance),
                     const SizedBox(height: 14),
                     Row(
                       children: [
@@ -345,6 +334,33 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
         icon: const Icon(Icons.payments),
         label: const Text('إضافة دفعة'),
       ),
+    );
+  }
+
+  Widget _buildBalanceDisplay(double balance) {
+    final amount = balance.abs().toStringAsFixed(2);
+
+    String title;
+    Color? color;
+
+    if (balance > 0) {
+      title = 'عليه $amount ريال';
+      color = Colors.red;
+    } else if (balance < 0) {
+      title = 'له $amount ريال';
+      color = Colors.green;
+    } else {
+      title = 'مسدد 0.00 ريال';
+    }
+
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 26,
+        fontWeight: FontWeight.bold,
+        color: color,
+      ),
+      textAlign: TextAlign.center,
     );
   }
 

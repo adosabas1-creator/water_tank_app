@@ -176,6 +176,8 @@ class DatabaseHelper {
         payment_type TEXT NOT NULL,
         reference_id INTEGER NOT NULL,
         amount REAL NOT NULL,
+        payment_method TEXT,
+        reference_number TEXT,
         payment_date TEXT NOT NULL,
         notes TEXT,
         created_by INTEGER NOT NULL,

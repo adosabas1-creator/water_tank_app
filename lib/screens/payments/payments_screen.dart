@@ -4,10 +4,19 @@ import 'package:provider/provider.dart';
 
 import '../../models/payment.dart';
 import '../../services/payment_service.dart';
+import '../../services/client_service.dart';
+import '../../services/supplier_service.dart';
 import '../../core/auth/user_provider.dart';
 
 class PaymentsScreen extends StatefulWidget {
-  const PaymentsScreen({super.key});
+  final String? initialPaymentType;
+  final int? initialReferenceId;
+
+  const PaymentsScreen({
+    super.key,
+    this.initialPaymentType,
+    this.initialReferenceId,
+  });
 
   @override
   State<PaymentsScreen> createState() => _PaymentsScreenState();
@@ -15,6 +24,8 @@ class PaymentsScreen extends StatefulWidget {
 
 class _PaymentsScreenState extends State<PaymentsScreen> {
   final PaymentService _service = PaymentService();
+  final ClientService _clientService = ClientService();
+  final SupplierService _supplierService = SupplierService();
 
   late Future<List<Payment>> _future;
 
@@ -22,6 +33,18 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   void initState() {
     super.initState();
     _future = _service.getAllPayments();
+
+    if (widget.initialPaymentType != null &&
+        widget.initialReferenceId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showPaymentDialog(
+            initialPaymentType: widget.initialPaymentType,
+            initialReferenceId: widget.initialReferenceId,
+          );
+        }
+      });
+    }
   }
 
   void _refresh() {
@@ -37,11 +60,17 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     return 'دفعة مورد';
   }
 
-  Future<void> _showPaymentDialog({Payment? payment}) async {
+  Future<void> _showPaymentDialog({
+    Payment? payment,
+    String? initialPaymentType,
+    int? initialReferenceId,
+  }) async {
     final formKey = GlobalKey<FormState>();
 
     final referenceController = TextEditingController(
-      text: payment?.referenceId.toString() ?? '',
+      text: payment?.referenceId.toString() ??
+          initialReferenceId?.toString() ??
+          '',
     );
 
     final amountController = TextEditingController(
@@ -52,7 +81,12 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
       text: payment?.notes ?? '',
     );
 
-    String paymentType = payment?.paymentType ?? 'client_payment';
+    String paymentType =
+        payment?.paymentType ?? initialPaymentType ?? 'client_payment';
+
+    final bool accountLocked = payment == null &&
+        initialPaymentType != null &&
+        initialReferenceId != null;
     String paymentMethod = payment?.paymentMethod ?? 'cash';
     final referenceNumberController =
         TextEditingController(text: payment?.referenceNumber ?? '');
@@ -97,6 +131,40 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                 final referenceId = int.parse(referenceController.text.trim());
 
                 final amount = double.parse(amountController.text.trim());
+
+                if (paymentType == 'client_payment') {
+                  final client =
+                      await _clientService.getClientById(referenceId);
+                  if (client == null) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('رقم العميل غير موجود'),
+                        ),
+                      );
+                    }
+                    setDialogState(() {
+                      saving = false;
+                    });
+                    return;
+                  }
+                } else if (paymentType == 'supplier_payment') {
+                  final supplier =
+                      await _supplierService.getSupplierById(referenceId);
+                  if (supplier == null) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('رقم المورد غير موجود'),
+                        ),
+                      );
+                    }
+                    setDialogState(() {
+                      saving = false;
+                    });
+                    return;
+                  }
+                }
 
                 final now = DateTime.now().toIso8601String();
 
@@ -207,12 +275,12 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                             child: Text('دفعة مورد'),
                           ),
                         ],
-                        onChanged: saving
+                        onChanged: saving || accountLocked
                             ? null
                             : (value) {
                                 if (value != null) {
                                   setDialogState(() {
-                                    paymentMethod = value;
+                                    paymentType = value;
                                   });
                                 }
                               },
@@ -221,10 +289,14 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                       TextFormField(
                         controller: referenceController,
                         keyboardType: TextInputType.number,
-                        enabled: !saving,
-                        decoration: const InputDecoration(
-                          labelText: 'رقم العميل / المورد',
-                          border: OutlineInputBorder(),
+                        enabled: !saving && !accountLocked,
+                        decoration: InputDecoration(
+                          labelText: accountLocked
+                              ? (paymentType == 'client_payment'
+                                  ? 'رقم العميل'
+                                  : 'رقم المورد')
+                              : 'رقم العميل / المورد',
+                          border: const OutlineInputBorder(),
                         ),
                         validator: (value) {
                           final number = int.tryParse(value?.trim() ?? '');

@@ -35,6 +35,7 @@ class DashboardScreen extends StatelessWidget {
             _buildCard(context, 'الموردون', Icons.local_shipping, '/suppliers'),
           if (PermissionService.hasPermission(user, PermissionKeys.salesView))
             _buildCard(context, 'المبيعات', Icons.shopping_cart, '/sales'),
+          _buildCard(context, 'المشتريات', Icons.inventory_2, '/purchases'),
           _buildCard(context, 'المدفوعات', Icons.payments, '/payments'),
           _buildCard(context, 'المصروفات', Icons.money_off, '/expenses'),
           _buildCard(context, 'الرواتب', Icons.attach_money, '/salaries'),

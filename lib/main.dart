@@ -13,6 +13,7 @@ import 'screens/expenses/expenses_screen.dart';
 import 'screens/salaries/salaries_screen.dart';
 import 'screens/reports/reports_screen.dart';
 import 'screens/statements/statements_screen.dart';
+import 'screens/purchases/purchases_screen.dart';
 import 'screens/users/users_screen.dart';
 import 'screens/logs/logs_screen.dart';
 import 'services/backup_service.dart';
@@ -71,6 +72,7 @@ class MyApp extends StatelessWidget {
         '/clients': (context) => const ClientsScreen(),
         '/suppliers': (context) => const SuppliersScreen(),
         '/sales': (context) => const SalesScreen(),
+        '/purchases': (context) => const PurchasesScreen(),
         '/payments': (context) => const PaymentsScreen(),
         '/expenses': (context) => const ExpensesScreen(),
         '/salaries': (context) => const SalariesScreen(),

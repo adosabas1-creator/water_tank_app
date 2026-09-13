@@ -217,6 +217,64 @@ class DatabaseHelper {
       )
     ''');
     await db.execute('''
+      CREATE TABLE purchase_invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_number TEXT UNIQUE NOT NULL,
+        supplier_id INTEGER NOT NULL,
+        purchase_date TEXT NOT NULL,
+        total_amount REAL NOT NULL,
+        payment_status TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
+        FOREIGN KEY (created_by) REFERENCES users (id)
+      );
+
+      CREATE TABLE purchase_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        purchase_invoice_id INTEGER NOT NULL,
+        item_type TEXT NOT NULL DEFAULT 'tank',
+        units INTEGER NOT NULL,
+        purchase_price REAL NOT NULL,
+        total_amount REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices (id)
+      );
+
+      CREATE TABLE inventory_layers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        purchase_item_id INTEGER NOT NULL,
+        item_type TEXT NOT NULL DEFAULT 'tank',
+        original_units INTEGER NOT NULL,
+        remaining_units INTEGER NOT NULL,
+        unit_cost REAL NOT NULL,
+        layer_date TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id)
+      );
+
+      CREATE INDEX idx_purchase_invoices_supplier
+        ON purchase_invoices (supplier_id, purchase_date);
+
+      CREATE INDEX idx_purchase_items_invoice
+        ON purchase_items (purchase_invoice_id);
+
+      CREATE INDEX idx_inventory_layers_fifo
+        ON inventory_layers (item_type, layer_date, id);
+
       CREATE TABLE expenses (
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -888,6 +946,78 @@ class DatabaseHelper {
         ON account_transactions (account_type, reference_id, transaction_date)
       ''');
     }
+    if (oldVersion < 20) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS purchase_invoices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          invoice_number TEXT UNIQUE NOT NULL,
+          supplier_id INTEGER NOT NULL,
+          purchase_date TEXT NOT NULL,
+          total_amount REAL NOT NULL,
+          payment_status TEXT NOT NULL,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
+          FOREIGN KEY (created_by) REFERENCES users (id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS purchase_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          purchase_invoice_id INTEGER NOT NULL,
+          item_type TEXT NOT NULL DEFAULT 'tank',
+          units INTEGER NOT NULL,
+          purchase_price REAL NOT NULL,
+          total_amount REAL NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices (id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS inventory_layers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          purchase_item_id INTEGER NOT NULL,
+          item_type TEXT NOT NULL DEFAULT 'tank',
+          original_units INTEGER NOT NULL,
+          remaining_units INTEGER NOT NULL,
+          unit_cost REAL NOT NULL,
+          layer_date TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_purchase_invoices_supplier
+        ON purchase_invoices (supplier_id, purchase_date)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_purchase_items_invoice
+        ON purchase_items (purchase_invoice_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_inventory_layers_fifo
+        ON inventory_layers (item_type, layer_date, id)
+      ''');
+    }
+
     if (oldVersion < 19) {
       await db.execute('ALTER TABLE payments ADD COLUMN payment_method TEXT');
       await db.execute('ALTER TABLE payments ADD COLUMN reference_number TEXT');

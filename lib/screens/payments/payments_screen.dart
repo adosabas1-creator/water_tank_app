@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/payment.dart';
+import '../../models/client.dart';
+import '../../models/supplier.dart';
 import '../../services/payment_service.dart';
 import '../../services/client_service.dart';
 import '../../services/supplier_service.dart';
@@ -28,11 +30,39 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   final SupplierService _supplierService = SupplierService();
 
   late Future<List<Payment>> _future;
+  Map<int, String> _clientNames = {};
+  Map<int, String> _supplierNames = {};
+
+  Future<void> _loadReferenceNames() async {
+    final clients = await _clientService.getAllClients();
+    final suppliers = await _supplierService.getAllSuppliers();
+
+    if (!mounted) return;
+
+    setState(() {
+      _clientNames = {
+        for (final client in clients)
+          if (client.id != null) client.id!: client.name,
+      };
+      _supplierNames = {
+        for (final supplier in suppliers)
+          if (supplier.id != null) supplier.id!: supplier.name,
+      };
+    });
+  }
+
+  String _referenceName(Payment payment) {
+    if (payment.paymentType == 'client_payment') {
+      return _clientNames[payment.referenceId] ?? 'عميل غير معروف';
+    }
+    return _supplierNames[payment.referenceId] ?? 'مورد غير معروف';
+  }
 
   @override
   void initState() {
     super.initState();
     _future = _service.getAllPayments();
+    _loadReferenceNames();
 
     if (widget.initialPaymentType != null &&
         widget.initialReferenceId != null) {
@@ -66,12 +96,41 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     int? initialReferenceId,
   }) async {
     final formKey = GlobalKey<FormState>();
+    final userProvider = context.read<UserProvider>();
 
-    final referenceController = TextEditingController(
-      text: payment?.referenceId.toString() ??
-          initialReferenceId?.toString() ??
-          '',
-    );
+    final List<Client> clients = await _clientService.getAllClients();
+    final List<Supplier> suppliers = await _supplierService.getAllSuppliers();
+
+    String paymentType =
+        payment?.paymentType ?? initialPaymentType ?? 'client_payment';
+
+    int? selectedReferenceId = payment?.referenceId ?? initialReferenceId;
+    String? selectedReferenceName;
+    final referenceNameController = TextEditingController();
+
+    void updateSelectedReferenceName() {
+      selectedReferenceName = null;
+
+      if (paymentType == 'client_payment') {
+        for (final client in clients) {
+          if (client.id == selectedReferenceId) {
+            selectedReferenceName = client.name;
+            break;
+          }
+        }
+      } else {
+        for (final supplier in suppliers) {
+          if (supplier.id == selectedReferenceId) {
+            selectedReferenceName = supplier.name;
+            break;
+          }
+        }
+      }
+
+      referenceNameController.text = selectedReferenceName ?? '';
+    }
+
+    updateSelectedReferenceName();
 
     final amountController = TextEditingController(
       text: payment?.amount.toString() ?? '',
@@ -80,9 +139,6 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     final notesController = TextEditingController(
       text: payment?.notes ?? '',
     );
-
-    String paymentType =
-        payment?.paymentType ?? initialPaymentType ?? 'client_payment';
 
     final bool accountLocked = payment == null &&
         initialPaymentType != null &&
@@ -97,8 +153,6 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
     bool saving = false;
 
-    final userProvider = context.read<UserProvider>();
-
     int? createdBy;
 
     // نحاول الحصول على معرف المستخدم الحالي بطريقة آمنة.
@@ -111,6 +165,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     }
 
     createdBy ??= payment?.createdBy ?? 0;
+
+    if (!mounted) return;
 
     await showDialog<void>(
       context: context,
@@ -128,43 +184,16 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
               });
 
               try {
-                final referenceId = int.parse(referenceController.text.trim());
+                final referenceId = selectedReferenceId;
+
+                if (referenceId == null || selectedReferenceName == null) {
+                  setDialogState(() {
+                    saving = false;
+                  });
+                  return;
+                }
 
                 final amount = double.parse(amountController.text.trim());
-
-                if (paymentType == 'client_payment') {
-                  final client =
-                      await _clientService.getClientById(referenceId);
-                  if (client == null) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('رقم العميل غير موجود'),
-                        ),
-                      );
-                    }
-                    setDialogState(() {
-                      saving = false;
-                    });
-                    return;
-                  }
-                } else if (paymentType == 'supplier_payment') {
-                  final supplier =
-                      await _supplierService.getSupplierById(referenceId);
-                  if (supplier == null) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('رقم المورد غير موجود'),
-                        ),
-                      );
-                    }
-                    setDialogState(() {
-                      saving = false;
-                    });
-                    return;
-                  }
-                }
 
                 final now = DateTime.now().toIso8601String();
 
@@ -281,30 +310,148 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                                 if (value != null) {
                                   setDialogState(() {
                                     paymentType = value;
+                                    selectedReferenceId = null;
+                                    selectedReferenceName = null;
+                                    referenceNameController.clear();
                                   });
                                 }
                               },
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
-                        controller: referenceController,
-                        keyboardType: TextInputType.number,
+                        controller: referenceNameController,
+                        readOnly: true,
                         enabled: !saving && !accountLocked,
                         decoration: InputDecoration(
-                          labelText: accountLocked
-                              ? (paymentType == 'client_payment'
-                                  ? 'رقم العميل'
-                                  : 'رقم المورد')
-                              : 'رقم العميل / المورد',
+                          labelText: paymentType == 'client_payment'
+                              ? 'العميل'
+                              : 'المورد',
+                          hintText: paymentType == 'client_payment'
+                              ? 'اضغط لاختيار العميل بالاسم'
+                              : 'اضغط لاختيار المورد بالاسم',
                           border: const OutlineInputBorder(),
+                          suffixIcon: const Icon(Icons.search),
                         ),
-                        validator: (value) {
-                          final number = int.tryParse(value?.trim() ?? '');
+                        onTap: saving || accountLocked
+                            ? null
+                            : () async {
+                                final List<Map<String, dynamic>> accounts =
+                                    paymentType == 'client_payment'
+                                        ? clients
+                                            .map((client) => {
+                                                  'id': client.id,
+                                                  'name': client.name,
+                                                })
+                                            .toList()
+                                        : suppliers
+                                            .map((supplier) => {
+                                                  'id': supplier.id,
+                                                  'name': supplier.name,
+                                                })
+                                            .toList();
 
-                          if (number == null || number <= 0) {
-                            return 'أدخل رقمًا صحيحًا';
+                                final searchController =
+                                    TextEditingController();
+
+                                final pickedId = await showDialog<int>(
+                                  context: context,
+                                  builder: (pickerContext) {
+                                    return StatefulBuilder(
+                                      builder:
+                                          (pickerContext, setPickerState) {
+                                        final query = searchController.text
+                                            .trim()
+                                            .toLowerCase();
+
+                                        final filtered =
+                                            accounts.where((account) {
+                                          return account['name']
+                                              .toString()
+                                              .toLowerCase()
+                                              .contains(query);
+                                        }).toList();
+
+                                        return AlertDialog(
+                                          title: Text(
+                                            paymentType == 'client_payment'
+                                                ? 'اختيار العميل'
+                                                : 'اختيار المورد',
+                                          ),
+                                          content: SizedBox(
+                                            width: double.maxFinite,
+                                            height: 360,
+                                            child: Column(
+                                              children: [
+                                                TextField(
+                                                  controller:
+                                                      searchController,
+                                                  autofocus: true,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                    labelText: 'بحث بالاسم',
+                                                    prefixIcon:
+                                                        Icon(Icons.search),
+                                                    border:
+                                                        OutlineInputBorder(),
+                                                  ),
+                                                  onChanged: (_) =>
+                                                      setPickerState(() {}),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                Expanded(
+                                                  child: filtered.isEmpty
+                                                      ? const Center(
+                                                          child: Text(
+                                                            'لا توجد نتائج',
+                                                          ),
+                                                        )
+                                                      : ListView.builder(
+                                                          itemCount:
+                                                              filtered.length,
+                                                          itemBuilder:
+                                                              (context, index) {
+                                                            final account =
+                                                                filtered[index];
+
+                                                            return ListTile(
+                                                              title: Text(
+                                                                account['name'],
+                                                              ),
+                                                              onTap: () =>
+                                                                  Navigator.of(
+                                                                pickerContext,
+                                                              ).pop(
+                                                                account['id'],
+                                                              ),
+                                                            );
+                                                          },
+                                                        ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                );
+
+                                searchController.dispose();
+
+                                if (pickedId != null) {
+                                  setDialogState(() {
+                                    selectedReferenceId = pickedId;
+                                    updateSelectedReferenceName();
+                                  });
+                                }
+                              },
+                        validator: (_) {
+                          if (selectedReferenceId == null ||
+                              selectedReferenceName == null) {
+                            return paymentType == 'client_payment'
+                                ? 'اختر العميل'
+                                : 'اختر المورد';
                           }
-
                           return null;
                         },
                       ),
@@ -434,7 +581,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
       },
     );
 
-    referenceController.dispose();
+    referenceNameController.dispose();
     amountController.dispose();
     notesController.dispose();
     referenceNumberController.dispose();
@@ -570,7 +717,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                       '${_paymentTypeText(payment.paymentType)} #${payment.id}',
                     ),
                     subtitle: Text(
-                      'المرجع: ${payment.referenceId}\n'
+                      'الاسم: ${_referenceName(payment)}\n'
                       'المبلغ: ${payment.amount.toStringAsFixed(2)}\n'
                       'التاريخ: ${payment.paymentDate.split('T').first}'
                       '${payment.notes == null || payment.notes!.isEmpty ? '' : '\nملاحظات: ${payment.notes}'}',

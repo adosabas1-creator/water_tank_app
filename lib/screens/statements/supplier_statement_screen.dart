@@ -298,7 +298,7 @@ class _SupplierStatementScreenState extends State<SupplierStatementScreen> {
                 child: Column(
                   children: [
                     const Text(
-                      'المبلغ المتبقي للمورد',
+                      'الرصيد المتبقي للمورد',
                       style: TextStyle(fontSize: 16),
                     ),
                     const SizedBox(height: 6),
@@ -319,14 +319,14 @@ class _SupplierStatementScreenState extends State<SupplierStatementScreen> {
                       children: [
                         Expanded(
                           child: _summaryItem(
-                            'مدين',
+                            'إجمالي المدين',
                             _totalDebit,
                             Icons.arrow_downward,
                           ),
                         ),
                         Expanded(
                           child: _summaryItem(
-                            'دائن',
+                            'إجمالي الدائن (المدفوعات)',
                             _totalCredit,
                             Icons.arrow_upward,
                           ),

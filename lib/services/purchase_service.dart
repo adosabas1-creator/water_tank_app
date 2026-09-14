@@ -1,5 +1,3 @@
-import 'package:uuid/uuid.dart';
-
 import '../core/database/database_helper.dart';
 import '../models/account_transaction.dart';
 import '../models/inventory_layer.dart';
@@ -14,8 +12,6 @@ class PurchaseService {
     required PurchaseItem item,
   }) async {
     final db = await _dbHelper.database;
-    const uuid = Uuid();
-
     return await db.transaction((txn) async {
       final invoiceId = await txn.insert(
         'purchase_invoices',
@@ -49,7 +45,7 @@ class PurchaseService {
         layerDate: invoice.purchaseDate,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
-        syncId: 'layer_${uuid.v4()}',
+        syncId: 'layer_${invoice.syncId}_$itemId',
       );
 
       await txn.insert(

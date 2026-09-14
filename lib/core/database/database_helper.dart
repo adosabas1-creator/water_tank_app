@@ -275,6 +275,32 @@ class DatabaseHelper {
       CREATE INDEX idx_inventory_layers_fifo
         ON inventory_layers (item_type, layer_date, id);
 
+      CREATE TABLE sale_inventory_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sale_id INTEGER NOT NULL,
+        inventory_layer_id INTEGER NOT NULL,
+        purchase_item_id INTEGER NOT NULL,
+        supplier_id INTEGER NOT NULL,
+        units INTEGER NOT NULL,
+        unit_cost REAL NOT NULL,
+        cost_amount REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales (id),
+        FOREIGN KEY (inventory_layer_id) REFERENCES inventory_layers (id),
+        FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id),
+        FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+      );
+
+      CREATE INDEX idx_sale_inventory_allocations_sale
+        ON sale_inventory_allocations (sale_id);
+
+      CREATE INDEX idx_sale_inventory_allocations_supplier
+        ON sale_inventory_allocations (supplier_id, created_at);
+
       CREATE TABLE expenses (
 
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1015,6 +1041,40 @@ class DatabaseHelper {
       await db.execute('''
         CREATE INDEX IF NOT EXISTS idx_inventory_layers_fifo
         ON inventory_layers (item_type, layer_date, id)
+      ''');
+    }
+
+    if (oldVersion < 21) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS sale_inventory_allocations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sale_id INTEGER NOT NULL,
+          inventory_layer_id INTEGER NOT NULL,
+          purchase_item_id INTEGER NOT NULL,
+          supplier_id INTEGER NOT NULL,
+          units INTEGER NOT NULL,
+          unit_cost REAL NOT NULL,
+          cost_amount REAL NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (sale_id) REFERENCES sales (id),
+          FOREIGN KEY (inventory_layer_id) REFERENCES inventory_layers (id),
+          FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id),
+          FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_sale
+        ON sale_inventory_allocations (sale_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_supplier
+        ON sale_inventory_allocations (supplier_id, created_at)
       ''');
     }
 

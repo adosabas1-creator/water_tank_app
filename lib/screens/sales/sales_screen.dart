@@ -37,7 +37,6 @@ class _SalesScreenState extends State<SalesScreen> {
   DateTime _selectedDate = DateTime.now();
 
   String _clientPaymentStatus = 'paid';
-  String _supplierPaymentStatus = 'paid';
 
   bool _loading = true;
   bool _saving = false;
@@ -210,9 +209,8 @@ class _SalesScreenState extends State<SalesScreen> {
     final total = quantity * price;
     final now = DateTime.now().toIso8601String();
 
-    final userName = user.fullName.trim().isEmpty
-        ? user.username
-        : user.fullName.trim();
+    final userName =
+        user.fullName.trim().isEmpty ? user.username : user.fullName.trim();
 
     setState(() {
       _saving = true;
@@ -241,7 +239,6 @@ class _SalesScreenState extends State<SalesScreen> {
         paymentStatus: _clientPaymentStatus,
 
         clientPaymentStatus: _clientPaymentStatus,
-        supplierPaymentStatus: _supplierPaymentStatus,
         createdByName: userName,
 
         notes: _notesController.text.trim().isEmpty
@@ -253,23 +250,22 @@ class _SalesScreenState extends State<SalesScreen> {
         updatedAt: now,
       );
 
-      await _saleService.addSale(sale);
+      final savedSale = await _saleService.addSale(sale);
 
       if (!mounted) return;
 
       await _loadData();
 
       _showReceipt(
-        saleNumber: sale.saleNumber ?? '-',
-        supplierName: _supplierName(sale.supplierId),
-        clientName: _clientName(sale.clientId),
-        quantity: quantity,
-        price: price,
-        total: total,
-        date: sale.saleDate,
-        clientPaymentStatus: sale.clientPaymentStatus ?? 'paid',
-        supplierPaymentStatus: sale.supplierPaymentStatus ?? 'paid',
-        userName: sale.createdByName ?? userName,
+        saleNumber: savedSale.saleNumber ?? '-',
+        supplierName: _supplierName(savedSale.supplierId),
+        clientName: _clientName(savedSale.clientId),
+        quantity: savedSale.units,
+        price: savedSale.salePrice,
+        total: savedSale.totalAmount,
+        date: savedSale.saleDate,
+        clientPaymentStatus: savedSale.clientPaymentStatus ?? 'paid',
+        userName: savedSale.createdByName ?? userName,
       );
 
       _clearForm();
@@ -298,7 +294,6 @@ class _SalesScreenState extends State<SalesScreen> {
       _selectedSupplierId = null;
       _selectedDate = DateTime.now();
       _clientPaymentStatus = 'paid';
-      _supplierPaymentStatus = 'paid';
     });
   }
 
@@ -311,7 +306,6 @@ class _SalesScreenState extends State<SalesScreen> {
     required double total,
     required String date,
     required String clientPaymentStatus,
-    required String supplierPaymentStatus,
     required String userName,
   }) {
     showDialog<void>(
@@ -337,28 +331,18 @@ class _SalesScreenState extends State<SalesScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const Divider(),
-
                   _receiptRow('المورد', supplierName),
                   _receiptRow('العميل', clientName),
                   _receiptRow('عدد الوحدات', '$quantity'),
                   _receiptRow('سعر الوحدة', _formatNumber(price)),
                   _receiptRow('التاريخ', date),
-
                   const SizedBox(height: 4),
-
                   _receiptRow(
                     'دفع العميل',
                     _paymentLabel(clientPaymentStatus),
                   ),
-                  _receiptRow(
-                    'دفع المورد',
-                    _paymentLabel(supplierPaymentStatus),
-                  ),
-
                   _receiptRow('المستخدم', userName),
-
                   const Divider(),
-
                   _receiptRow(
                     'الإجمالي',
                     _formatNumber(total),
@@ -469,9 +453,7 @@ class _SalesScreenState extends State<SalesScreen> {
     final user = context.read<UserProvider>().currentUser;
     final userName = user == null
         ? 'غير مسجل'
-        : (user.fullName.trim().isEmpty
-            ? user.username
-            : user.fullName.trim());
+        : (user.fullName.trim().isEmpty ? user.username : user.fullName.trim());
 
     return Card(
       child: Padding(
@@ -482,7 +464,6 @@ class _SalesScreenState extends State<SalesScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _sectionTitle('إضافة مبيعة', Icons.point_of_sale),
-
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -521,9 +502,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 12),
-
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -564,9 +543,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 16),
-
               TextFormField(
                 controller: _quantityController,
                 keyboardType: TextInputType.number,
@@ -579,9 +556,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   return null;
                 },
               ),
-
               const SizedBox(height: 12),
-
               TextFormField(
                 controller: _priceController,
                 keyboardType: const TextInputType.numberWithOptions(
@@ -596,9 +571,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   return null;
                 },
               ),
-
               const SizedBox(height: 12),
-
               Card(
                 margin: EdgeInsets.zero,
                 child: Padding(
@@ -625,9 +598,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 12),
-
               InkWell(
                 onTap: _pickDate,
                 borderRadius: BorderRadius.circular(4),
@@ -643,9 +614,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 12),
-
               DropdownButtonFormField<String>(
                 initialValue: _clientPaymentStatus,
                 decoration: _decoration('حالة دفع العميل'),
@@ -667,33 +636,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   }
                 },
               ),
-
               const SizedBox(height: 12),
-
-              DropdownButtonFormField<String>(
-                initialValue: _supplierPaymentStatus,
-                decoration: _decoration('حالة دفع المورد'),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'paid',
-                    child: Text('مدفوع'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'unpaid',
-                    child: Text('آجل'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _supplierPaymentStatus = value;
-                    });
-                  }
-                },
-              ),
-
-              const SizedBox(height: 12),
-
               InputDecorator(
                 decoration: _decoration('المستخدم'),
                 child: Row(
@@ -707,17 +650,13 @@ class _SalesScreenState extends State<SalesScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 12),
-
               TextFormField(
                 controller: _notesController,
                 maxLines: 2,
                 decoration: _decoration('ملاحظات (اختياري)'),
               ),
-
               const SizedBox(height: 16),
-
               FilledButton.icon(
                 onPressed: _saving ? null : _saveSale,
                 icon: _saving

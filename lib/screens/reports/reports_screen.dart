@@ -17,6 +17,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   double _totalSales = 0;
   double _totalExpenses = 0;
   double _netRevenue = 0;
+  List<Map<String, dynamic>> _supplierSalesShare = [];
 
   bool _isLoading = true;
   String? _error;
@@ -38,6 +39,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     try {
       final sales = await _saleService.getAllSales();
       final expenses = await _expenseService.getAllExpenses();
+      final supplierSalesShare =
+          await _saleService.getSupplierSalesShareReport();
 
       final totalSales = sales.fold<double>(
         0,
@@ -57,6 +60,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         _totalSales = totalSales;
         _totalExpenses = totalExpenses;
         _netRevenue = netRevenue;
+        _supplierSalesShare = supplierSalesShare;
         _isLoading = false;
       });
     } catch (e) {
@@ -112,6 +116,69 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         Icons.trending_up,
                         color: _netRevenue >= 0 ? Colors.green : Colors.red,
                       ),
+                      const SizedBox(height: 16),
+                      const Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'نصيب الموردين من المبيعات',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_supplierSalesShare.isEmpty)
+                        const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text(
+                              'لا توجد مبيعات مرتبطة بمخزون الموردين حتى الآن.',
+                            ),
+                          ),
+                        )
+                      else
+                        ..._supplierSalesShare.map(
+                          (supplier) => Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    supplier['supplier_name']?.toString() ??
+                                        'مورد غير معروف',
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'الوحدات المباعة: ${supplier['sold_units'] ?? 0}',
+                                  ),
+                                  Text(
+                                    'تكلفة المبيعات: ${(supplier['cost_amount'] ?? 0).toStringAsFixed(2)} ريال',
+                                  ),
+                                  Text(
+                                    'قيمة المبيعات: ${(supplier['sales_amount'] ?? 0).toStringAsFixed(2)} ريال',
+                                  ),
+                                  Text(
+                                    'الربح: ${(supplier['profit_amount'] ?? 0).toStringAsFixed(2)} ريال',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color:
+                                          (supplier['profit_amount'] ?? 0) >= 0
+                                              ? Colors.green
+                                              : Colors.red,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

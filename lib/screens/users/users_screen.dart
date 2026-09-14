@@ -5,8 +5,11 @@ import 'package:flutter/services.dart';
 
 import '../../models/user.dart';
 import '../../core/auth/auth_service.dart';
+import '../../core/auth/user_provider.dart';
 import '../../core/constants/permissions.dart';
 import '../../services/backup_service.dart';
+import '../../services/reset_service.dart';
+import 'package:provider/provider.dart';
 
 class UsersScreen extends StatefulWidget {
   const UsersScreen({super.key});
@@ -18,6 +21,7 @@ class UsersScreen extends StatefulWidget {
 class _UsersScreenState extends State<UsersScreen> {
   final AuthService _authService = AuthService();
   final BackupService _backupService = BackupService();
+  final ResetService _resetService = ResetService();
 
   late Future<List<User>> _future;
 
@@ -1069,6 +1073,9 @@ class _UsersScreenState extends State<UsersScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
+        final currentUser = dialogContext.read<UserProvider>().currentUser;
+        final isAdmin = currentUser?.role == 'admin';
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
@@ -1122,6 +1129,78 @@ class _UsersScreenState extends State<UsersScreen> {
                     'يتم الاحتفاظ بآخر 7 نسخ تلقائية.',
                     style: TextStyle(fontSize: 12),
                   ),
+                  if (isAdmin) ...[
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        label: const Text('تصفير البيانات التشغيلية'),
+                        onPressed: () async {
+                          final userProvider =
+                              dialogContext.read<UserProvider>();
+
+                          final confirmed = await showDialog<bool>(
+                            context: dialogContext,
+                            builder: (confirmContext) {
+                              return AlertDialog(
+                                title: const Text('تأكيد التصفير'),
+                                content: const Text(
+                                  'سيتم حذف المبيعات والمشتريات والدفعات '
+                                  'والحسابات والمصروفات والرواتب والمخزون '
+                                  'وسجلات التعبئة والتشغيل.\n\n'
+                                  'سيتم الاحتفاظ بالمستخدمين والموردين '
+                                  'والعملاء والسائقين والخزانات.\n\n'
+                                  'هل تريد المتابعة؟',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(confirmContext, false),
+                                    child: const Text('إلغاء'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(confirmContext, true),
+                                    child: const Text('نعم، تصفير'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+
+                          if (confirmed != true) return;
+
+                          try {
+                            await _resetService
+                                .resetAllTransactionalData(userProvider);
+
+                            if (!mounted || !dialogContext.mounted) return;
+
+                            Navigator.pop(dialogContext);
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'تم تصفير البيانات التشغيلية بنجاح.',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!dialogContext.mounted) return;
+
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text('تعذر تنفيذ التصفير: $e'),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ],
               ),
               actions: [

@@ -222,6 +222,32 @@ class SaleService {
     });
   }
 
+  Future<List<Map<String, dynamic>>> getSupplierSalesShareReport() async {
+    final db = await _dbHelper.database;
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT
+        sia.supplier_id,
+        s.name AS supplier_name,
+        SUM(sia.units) AS sold_units,
+        SUM(sia.cost_amount) AS cost_amount,
+        SUM(sia.units * sales.sale_price) AS sales_amount,
+        SUM((sia.units * sales.sale_price) - sia.cost_amount) AS profit_amount
+      FROM sale_inventory_allocations sia
+      INNER JOIN sales ON sales.id = sia.sale_id
+      INNER JOIN suppliers s ON s.id = sia.supplier_id
+      WHERE sia.is_deleted = 0
+        AND sales.is_deleted = 0
+        AND s.is_deleted = 0
+      GROUP BY sia.supplier_id, s.name
+      ORDER BY s.name ASC
+      ''',
+    );
+
+    return rows;
+  }
+
   Future<List<Sale>> getAllSales({int? driverId}) async {
     final db = await _dbHelper.database;
 

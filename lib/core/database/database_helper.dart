@@ -354,6 +354,32 @@ class DatabaseHelper {
     ''');
   }
 
+  /// تصفير البيانات التشغيلية فقط.
+  /// لا يحذف المستخدمين أو الموردين أو العملاء أو السائقين أو الخزانات.
+  Future<void> resetTransactionalData() async {
+    final db = await database;
+
+    await db.transaction((txn) async {
+      const tables = [
+        'sale_inventory_allocations',
+        'sales',
+        'inventory_layers',
+        'purchase_items',
+        'purchase_invoices',
+        'payments',
+        'account_transactions',
+        'expenses',
+        'salaries',
+        'filling_operations',
+        'operation_logs',
+      ];
+
+      for (final table in tables) {
+        await txn.delete(table);
+      }
+    });
+  }
+
   Future<void> closeDatabase() async {
     final db = _database;
     _database = null;

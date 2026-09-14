@@ -136,12 +136,10 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
 
   String _transactionDescription(String type) {
     switch (type) {
-      case 'opening_balance':
-        return 'رصيد افتتاحي';
       case 'debt':
-        return 'إضافة دين';
+        return 'عليه';
       case 'adjustment':
-        return 'تسوية حساب';
+        return 'له';
       default:
         return 'حركة حساب';
     }

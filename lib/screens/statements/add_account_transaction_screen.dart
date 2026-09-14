@@ -31,7 +31,7 @@ class _AddAccountTransactionScreenState
 
   final AccountTransactionService _accountService =
       AccountTransactionService();
-  String _transactionType = 'opening_balance';
+  String _transactionType = 'debt';
   DateTime _selectedDate = DateTime.now();
   bool _isSaving = false;
 
@@ -126,12 +126,10 @@ class _AddAccountTransactionScreenState
 
   String _transactionTypeLabel(String value) {
     switch (value) {
-      case 'opening_balance':
-        return 'رصيد افتتاحي';
       case 'debt':
-        return 'دين / مستحق جديد';
+        return 'عليه';
       case 'adjustment':
-        return 'تسوية';
+        return 'له';
       default:
         return value;
     }
@@ -174,16 +172,12 @@ class _AddAccountTransactionScreenState
               ),
               items: const [
                 DropdownMenuItem(
-                  value: 'opening_balance',
-                  child: Text('رصيد افتتاحي'),
-                ),
-                DropdownMenuItem(
                   value: 'debt',
-                  child: Text('دين / مستحق جديد'),
+                  child: Text('عليه'),
                 ),
                 DropdownMenuItem(
                   value: 'adjustment',
-                  child: Text('تسوية'),
+                  child: Text('له'),
                 ),
               ],
               onChanged: _isSaving

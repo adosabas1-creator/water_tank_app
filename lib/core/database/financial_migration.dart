@@ -2,36 +2,22 @@ import 'package:sqflite/sqflite.dart';
 
 /// Idempotent financial schema migration.
 ///
-/// This migration deliberately keeps the new invoice links nullable so all
-/// existing payments/account transactions remain valid. New financial code
-/// should populate the links whenever the operation is invoice-specific.
+/// New invoice links remain nullable so existing financial records are kept
+/// intact. New invoice-specific payments should populate the invoice link.
 class FinancialMigration {
   static const int schemaRevision = 22;
 
   static Future<void> migrate(Database db) async {
-    await db.transaction((txn) async {
-      await _addColumnIfMissing(
-        txn,
-        'payments',
-        'purchase_invoice_id',
-        'INTEGER',
-      );
-      await _addColumnIfMissing(
-        txn,
-        'payments',
-        'payment_key',
-        'TEXT',
-      );
-      await _addColumnIfMissing(
-        txn,
-        'account_transactions',
-        'purchase_invoice_id',
-        'INTEGER',
-      );
+    // Must run outside the transaction; SQLite does not change this pragma
+    // while a transaction is active.
+    await db.execute('PRAGMA foreign_keys = ON');
 
-      // Give every legacy payment a stable unique key before adding the
-      // unique index. Existing rows are never deleted or rewritten except
-      // for this newly introduced nullable identifier.
+    await db.transaction((txn) async {
+      await _addColumnIfMissing(txn, 'payments', 'purchase_invoice_id', 'INTEGER');
+      await _addColumnIfMissing(txn, 'payments', 'payment_key', 'TEXT');
+      await _addColumnIfMissing(txn, 'account_transactions', 'purchase_invoice_id', 'INTEGER');
+
+      // Preserve every legacy payment and give it a deterministic unique key.
       await txn.execute('''
         UPDATE payments
         SET payment_key = 'legacy_payment_' || id
@@ -59,8 +45,6 @@ class FinancialMigration {
       ''');
 
       // Only one active purchase-debt entry may represent an invoice.
-      // Historical/deleted rows remain preserved and do not block a valid
-      // replacement during an explicit correction workflow.
       await txn.execute('''
         CREATE UNIQUE INDEX IF NOT EXISTS ux_account_purchase_debt_invoice
         ON account_transactions(purchase_invoice_id)
@@ -71,16 +55,17 @@ class FinancialMigration {
       ''');
 
       // Invoice-specific supplier payments must belong to the same supplier
-      // as the invoice and may never make cumulative payments exceed it.
+      // and may never make cumulative payments exceed the invoice total.
       await txn.execute('''
         CREATE TRIGGER IF NOT EXISTS trg_payment_invoice_guard_insert
         BEFORE INSERT ON payments
-        WHEN NEW.purchase_invoice_id IS NOT NULL
-          AND NEW.is_deleted = 0
+        WHEN NEW.purchase_invoice_id IS NOT NULL AND NEW.is_deleted = 0
         BEGIN
           SELECT CASE
             WHEN NEW.payment_type <> 'supplier_payment'
               THEN RAISE(ABORT, 'دفعة الفاتورة يجب أن تكون دفعة مورد')
+            WHEN NEW.amount <= 0
+              THEN RAISE(ABORT, 'مبلغ الدفعة يجب أن يكون أكبر من صفر')
             WHEN NOT EXISTS (
               SELECT 1 FROM purchase_invoices pi
               WHERE pi.id = NEW.purchase_invoice_id
@@ -88,8 +73,6 @@ class FinancialMigration {
                 AND pi.supplier_id = NEW.reference_id
             )
               THEN RAISE(ABORT, 'الفاتورة لا تنتمي إلى المورد المحدد')
-            WHEN NEW.amount <= 0
-              THEN RAISE(ABORT, 'مبلغ الدفعة يجب أن يكون أكبر من صفر')
             WHEN (
               SELECT COALESCE(SUM(p.amount), 0)
               FROM payments p
@@ -109,12 +92,13 @@ class FinancialMigration {
         CREATE TRIGGER IF NOT EXISTS trg_payment_invoice_guard_update
         BEFORE UPDATE OF purchase_invoice_id, reference_id, payment_type, amount, is_deleted
         ON payments
-        WHEN NEW.purchase_invoice_id IS NOT NULL
-          AND NEW.is_deleted = 0
+        WHEN NEW.purchase_invoice_id IS NOT NULL AND NEW.is_deleted = 0
         BEGIN
           SELECT CASE
             WHEN NEW.payment_type <> 'supplier_payment'
               THEN RAISE(ABORT, 'دفعة الفاتورة يجب أن تكون دفعة مورد')
+            WHEN NEW.amount <= 0
+              THEN RAISE(ABORT, 'مبلغ الدفعة يجب أن يكون أكبر من صفر')
             WHEN NOT EXISTS (
               SELECT 1 FROM purchase_invoices pi
               WHERE pi.id = NEW.purchase_invoice_id
@@ -122,8 +106,6 @@ class FinancialMigration {
                 AND pi.supplier_id = NEW.reference_id
             )
               THEN RAISE(ABORT, 'الفاتورة لا تنتمي إلى المورد المحدد')
-            WHEN NEW.amount <= 0
-              THEN RAISE(ABORT, 'مبلغ الدفعة يجب أن يكون أكبر من صفر')
             WHEN (
               SELECT COALESCE(SUM(p.amount), 0)
               FROM payments p
@@ -149,11 +131,8 @@ class FinancialMigration {
     String definition,
   ) async {
     final columns = await db.rawQuery('PRAGMA table_info($table)');
-    final exists = columns.any((row) => row['name'] == column);
-    if (!exists) {
-      await db.execute(
-        'ALTER TABLE $table ADD COLUMN $column $definition',
-      );
+    if (!columns.any((row) => row['name'] == column)) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
     }
   }
 }

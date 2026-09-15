@@ -99,7 +99,6 @@ class PurchaseService {
 
     return db.transaction((txn) async {
       final invoiceData = invoice.toMap()..remove('id');
-      // Status is derived from the actual initial payment amount.
       invoiceData['payment_status'] = expectedStatus;
 
       final invoiceId = await txn.insert('purchase_invoices', invoiceData);
@@ -145,8 +144,6 @@ class PurchaseService {
       );
       await txn.insert('inventory_layers', layer.toMap()..remove('id'));
 
-      // Every purchase creates one supplier liability equal to the full
-      // invoice value. Payments are subtracted separately by balance logic.
       final debtSyncId = 'purchase_debt_${invoice.syncId}';
       final debtExisting = await txn.query(
         'account_transactions',
@@ -165,7 +162,7 @@ class PurchaseService {
         referenceId: invoice.supplierId,
         purchaseInvoiceId: invoiceId,
         amount: invoice.totalAmount,
-        transactionType: 'purchase_debt',
+        transactionType: 'debt',
         transactionDate: invoice.purchaseDate.toIso8601String(),
         notes: 'شراء ${invoice.invoiceNumber}',
         createdBy: invoice.createdBy,
@@ -177,8 +174,6 @@ class PurchaseService {
       );
       await txn.insert('account_transactions', debt.toMap());
 
-      // Record actual money paid at creation. There is never a second
-      // account-transaction debit for this payment.
       if (resolvedPaidAmount > 0.000001) {
         final paymentSyncId = 'purchase_payment_${invoice.syncId}';
         final payment = Payment(

@@ -1,3 +1,5 @@
+import '../core/auth/permission_service.dart';
+import '../core/constants/permissions.dart';
 import '../core/database/database_helper.dart';
 import '../models/account_transaction.dart';
 import '../models/sale.dart';
@@ -6,6 +8,7 @@ class SaleService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
   Future<Sale> addSale(Sale sale) async {
+    PermissionService.requirePermission(PermissionKeys.salesAdd);
     final db = await _dbHelper.database;
 
     if (sale.units <= 0) {
@@ -387,6 +390,7 @@ class SaleService {
   }
 
   Future<void> updateSale(Sale sale) async {
+    PermissionService.requirePermission(PermissionKeys.salesEdit);
     if (sale.id == null) throw Exception('رقم البيع غير موجود.');
     if (sale.units <= 0) throw Exception('يجب أن تكون كمية البيع أكبر من صفر.');
     if (sale.totalAmount < 0) throw Exception('إجمالي البيع غير صالح.');
@@ -457,6 +461,7 @@ class SaleService {
   }
 
   Future<void> deleteSale(int id) async {
+    PermissionService.requirePermission(PermissionKeys.salesDelete);
     final db = await _dbHelper.database;
 
     await db.transaction((txn) async {

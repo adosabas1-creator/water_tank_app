@@ -22,9 +22,6 @@ class DatabaseHelper {
     return await openDatabase(
       path,
       version: AppConstants.localDbVersion,
-      onConfigure: (db) async {
-        await db.execute('PRAGMA foreign_keys = ON');
-      },
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -51,6 +48,7 @@ class DatabaseHelper {
         must_change_password INTEGER DEFAULT 0
       )
     ''');
+
     await db.execute('''
       CREATE TABLE clients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +64,7 @@ class DatabaseHelper {
         is_synced INTEGER DEFAULT 0
       )
     ''');
+
     await db.execute('''
       CREATE TABLE suppliers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +81,7 @@ class DatabaseHelper {
         is_synced INTEGER DEFAULT 0
       )
     ''');
+
     await db.execute('''
       CREATE TABLE drivers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,6 +96,7 @@ class DatabaseHelper {
         is_synced INTEGER DEFAULT 0
       )
     ''');
+
     await db.execute('''
       CREATE TABLE tanks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,6 +112,7 @@ class DatabaseHelper {
         FOREIGN KEY (driver_id) REFERENCES drivers (id)
       )
     ''');
+
     await db.execute('''
       CREATE TABLE filling_operations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -134,6 +136,7 @@ class DatabaseHelper {
         FOREIGN KEY (created_by) REFERENCES users (id)
       )
     ''');
+
     await db.execute('''
       CREATE TABLE sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,13 +169,12 @@ class DatabaseHelper {
         FOREIGN KEY (created_by) REFERENCES users (id)
       )
     ''');
+
     await db.execute('''
       CREATE TABLE payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         payment_type TEXT NOT NULL,
         reference_id INTEGER NOT NULL,
-        purchase_invoice_id INTEGER,
-        payment_key TEXT,
         amount REAL NOT NULL,
         payment_method TEXT,
         reference_number TEXT,
@@ -187,12 +189,12 @@ class DatabaseHelper {
         FOREIGN KEY (created_by) REFERENCES users (id)
       )
     ''');
+
     await db.execute('''
       CREATE TABLE account_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         account_type TEXT NOT NULL,
         reference_id INTEGER NOT NULL,
-        purchase_invoice_id INTEGER,
         amount REAL NOT NULL,
         transaction_type TEXT NOT NULL,
         transaction_date TEXT NOT NULL,
@@ -208,7 +210,11 @@ class DatabaseHelper {
     ''');
     await db.execute('''
       CREATE INDEX idx_account_transactions_reference
-      ON account_transactions (account_type, reference_id, transaction_date)
+      ON account_transactions (
+        account_type,
+        reference_id,
+        transaction_date
+      )
     ''');
     await db.execute('''
       CREATE TABLE purchase_invoices (
@@ -228,6 +234,7 @@ class DatabaseHelper {
         FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
         FOREIGN KEY (created_by) REFERENCES users (id)
       );
+
       CREATE TABLE purchase_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         purchase_invoice_id INTEGER NOT NULL,
@@ -242,6 +249,7 @@ class DatabaseHelper {
         sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices (id)
       );
+
       CREATE TABLE inventory_layers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         purchase_item_id INTEGER NOT NULL,
@@ -257,9 +265,16 @@ class DatabaseHelper {
         sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id)
       );
-      CREATE INDEX idx_purchase_invoices_supplier ON purchase_invoices (supplier_id, purchase_date);
-      CREATE INDEX idx_purchase_items_invoice ON purchase_items (purchase_invoice_id);
-      CREATE INDEX idx_inventory_layers_fifo ON inventory_layers (item_type, layer_date, id);
+
+      CREATE INDEX idx_purchase_invoices_supplier
+        ON purchase_invoices (supplier_id, purchase_date);
+
+      CREATE INDEX idx_purchase_items_invoice
+        ON purchase_items (purchase_invoice_id);
+
+      CREATE INDEX idx_inventory_layers_fifo
+        ON inventory_layers (item_type, layer_date, id);
+
       CREATE TABLE sale_inventory_allocations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sale_id INTEGER NOT NULL,
@@ -279,9 +294,15 @@ class DatabaseHelper {
         FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id),
         FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
       );
-      CREATE INDEX idx_sale_inventory_allocations_sale ON sale_inventory_allocations (sale_id);
-      CREATE INDEX idx_sale_inventory_allocations_supplier ON sale_inventory_allocations (supplier_id, created_at);
+
+      CREATE INDEX idx_sale_inventory_allocations_sale
+        ON sale_inventory_allocations (sale_id);
+
+      CREATE INDEX idx_sale_inventory_allocations_supplier
+        ON sale_inventory_allocations (supplier_id, created_at);
+
       CREATE TABLE expenses (
+
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         expense_type TEXT NOT NULL,
         amount REAL NOT NULL,
@@ -294,7 +315,10 @@ class DatabaseHelper {
         is_synced INTEGER DEFAULT 0,
         sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (created_by) REFERENCES users (id)
-      );
+      )
+    ''');
+
+    await db.execute('''
       CREATE TABLE salaries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         employee_id INTEGER NOT NULL,
@@ -313,7 +337,10 @@ class DatabaseHelper {
         sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (employee_id) REFERENCES users (id),
         FOREIGN KEY (created_by) REFERENCES users (id)
-      );
+      )
+    ''');
+
+    await db.execute('''
       CREATE TABLE operation_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -327,15 +354,26 @@ class DatabaseHelper {
     ''');
   }
 
+  /// تصفير البيانات التشغيلية فقط.
+  /// لا يحذف المستخدمين أو الموردين أو العملاء أو السائقين أو الخزانات.
   Future<void> resetTransactionalData() async {
     final db = await database;
+
     await db.transaction((txn) async {
       const tables = [
-        'sale_inventory_allocations', 'sales', 'inventory_layers',
-        'purchase_items', 'purchase_invoices', 'payments',
-        'account_transactions', 'expenses', 'salaries',
-        'filling_operations', 'operation_logs',
+        'sale_inventory_allocations',
+        'sales',
+        'inventory_layers',
+        'purchase_items',
+        'purchase_invoices',
+        'payments',
+        'account_transactions',
+        'expenses',
+        'salaries',
+        'filling_operations',
+        'operation_logs',
       ];
+
       for (final table in tables) {
         await txn.delete(table);
       }
@@ -345,62 +383,730 @@ class DatabaseHelper {
   Future<void> closeDatabase() async {
     final db = _database;
     _database = null;
-    if (db != null && db.isOpen) await db.close();
+    if (db != null && db.isOpen) {
+      await db.close();
+    }
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 17) {
-      final columns = await db.rawQuery('PRAGMA table_info(filling_operations)');
-      final tankColumn = columns.firstWhere((c) => c['name'] == 'tank_id', orElse: () => <String, Object?>{});
-      if (tankColumn['notnull'] == 1) {
-        await db.execute('ALTER TABLE filling_operations RENAME TO filling_operations_old');
-        await db.execute('''CREATE TABLE filling_operations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT, operation_number TEXT UNIQUE, tank_id INTEGER,
-          supplier_id INTEGER NOT NULL, units INTEGER NOT NULL, purchase_price REAL NOT NULL,
-          operation_date TEXT NOT NULL, employee_id INTEGER, notes TEXT, created_by INTEGER NOT NULL,
-          created_at TEXT NOT NULL, updated_at TEXT NOT NULL, is_deleted INTEGER DEFAULT 0,
-          is_synced INTEGER DEFAULT 0, sync_id TEXT UNIQUE NOT NULL,
-          FOREIGN KEY (tank_id) REFERENCES tanks (id), FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
-          FOREIGN KEY (employee_id) REFERENCES users (id), FOREIGN KEY (created_by) REFERENCES users (id))''');
-        await db.execute('''INSERT INTO filling_operations
-          (id,operation_number,tank_id,supplier_id,units,purchase_price,operation_date,employee_id,notes,created_by,created_at,updated_at,is_deleted,is_synced,sync_id)
-          SELECT id,operation_number,tank_id,supplier_id,units,purchase_price,operation_date,employee_id,notes,created_by,created_at,updated_at,is_deleted,is_synced,sync_id FROM filling_operations_old''');
+      final fillingColumns = await db.rawQuery(
+        'PRAGMA table_info(filling_operations)',
+      );
+
+      final tankColumn = fillingColumns.firstWhere(
+        (column) => column['name'] == 'tank_id',
+        orElse: () => <String, Object?>{},
+      );
+
+      final tankIsNotNull = tankColumn['notnull'] == 1;
+
+      if (tankIsNotNull) {
+        await db.execute(
+          'ALTER TABLE filling_operations RENAME TO filling_operations_old',
+        );
+
+        await db.execute('''
+          CREATE TABLE filling_operations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            operation_number TEXT UNIQUE,
+            tank_id INTEGER,
+            supplier_id INTEGER NOT NULL,
+            units INTEGER NOT NULL,
+            purchase_price REAL NOT NULL,
+            operation_date TEXT NOT NULL,
+            employee_id INTEGER,
+            notes TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            is_deleted INTEGER DEFAULT 0,
+            is_synced INTEGER DEFAULT 0,
+            sync_id TEXT UNIQUE NOT NULL,
+            FOREIGN KEY (tank_id) REFERENCES tanks (id),
+            FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
+            FOREIGN KEY (employee_id) REFERENCES users (id),
+            FOREIGN KEY (created_by) REFERENCES users (id)
+          )
+        ''');
+
+        await db.execute('''
+          INSERT INTO filling_operations (
+            id,
+            operation_number,
+            tank_id,
+            supplier_id,
+            units,
+            purchase_price,
+            operation_date,
+            employee_id,
+            notes,
+            created_by,
+            created_at,
+            updated_at,
+            is_deleted,
+            is_synced,
+            sync_id
+          )
+          SELECT
+            id,
+            operation_number,
+            tank_id,
+            supplier_id,
+            units,
+            purchase_price,
+            operation_date,
+            employee_id,
+            notes,
+            created_by,
+            created_at,
+            updated_at,
+            is_deleted,
+            is_synced,
+            sync_id
+          FROM filling_operations_old
+        ''');
+
         await db.execute('DROP TABLE filling_operations_old');
       }
     }
+
     if (oldVersion < 16) {
-      final c = await db.rawQuery('PRAGMA table_info(sales)');
-      if (!c.any((x) => x['name'] == 'client_payment_status')) await db.execute('ALTER TABLE sales ADD COLUMN client_payment_status TEXT');
-      if (!c.any((x) => x['name'] == 'supplier_payment_status')) await db.execute('ALTER TABLE sales ADD COLUMN supplier_payment_status TEXT');
-      if (!c.any((x) => x['name'] == 'created_by_name')) await db.execute('ALTER TABLE sales ADD COLUMN created_by_name TEXT');
-    }
-    if (oldVersion < 18) {
-      await db.execute('''CREATE TABLE IF NOT EXISTS account_transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, account_type TEXT NOT NULL, reference_id INTEGER NOT NULL,
-        amount REAL NOT NULL, transaction_type TEXT NOT NULL, transaction_date TEXT NOT NULL, notes TEXT,
-        created_by INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-        is_deleted INTEGER DEFAULT 0, is_synced INTEGER DEFAULT 0, sync_id TEXT UNIQUE NOT NULL,
-        FOREIGN KEY (created_by) REFERENCES users (id))''');
-      await db.execute('''CREATE INDEX IF NOT EXISTS idx_account_transactions_reference
-        ON account_transactions (account_type, reference_id, transaction_date)''');
-    }
-    if (oldVersion < 19) {
-      final p = await db.rawQuery('PRAGMA table_info(purchase_invoices)');
-      if (p.isEmpty) {
-        await db.execute('''CREATE TABLE purchase_invoices (
-          id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_number TEXT UNIQUE NOT NULL, supplier_id INTEGER NOT NULL,
-          purchase_date TEXT NOT NULL, total_amount REAL NOT NULL, payment_status TEXT NOT NULL, notes TEXT,
-          created_by INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-          is_deleted INTEGER DEFAULT 0, is_synced INTEGER DEFAULT 0, sync_id TEXT UNIQUE NOT NULL,
-          FOREIGN KEY (supplier_id) REFERENCES suppliers (id), FOREIGN KEY (created_by) REFERENCES users (id))''');
+      final salesColumns = await db.rawQuery(
+        'PRAGMA table_info(sales)',
+      );
+
+      final hasClientPaymentStatus = salesColumns.any(
+        (column) => column['name'] == 'client_payment_status',
+      );
+
+      final hasSupplierPaymentStatus = salesColumns.any(
+        (column) => column['name'] == 'supplier_payment_status',
+      );
+
+      final hasCreatedByName = salesColumns.any(
+        (column) => column['name'] == 'created_by_name',
+      );
+
+      if (!hasClientPaymentStatus) {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN client_payment_status TEXT',
+        );
+      }
+
+      if (!hasSupplierPaymentStatus) {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN supplier_payment_status TEXT',
+        );
+      }
+
+      if (!hasCreatedByName) {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN created_by_name TEXT',
+        );
       }
     }
-    if (oldVersion < 22) {
-      final paymentColumns = await db.rawQuery('PRAGMA table_info(payments)');
-      if (!paymentColumns.any((c) => c['name'] == 'purchase_invoice_id')) await db.execute('ALTER TABLE payments ADD COLUMN purchase_invoice_id INTEGER');
-      if (!paymentColumns.any((c) => c['name'] == 'payment_key')) await db.execute('ALTER TABLE payments ADD COLUMN payment_key TEXT');
-      final txColumns = await db.rawQuery('PRAGMA table_info(account_transactions)');
-      if (!txColumns.any((c) => c['name'] == 'purchase_invoice_id')) await db.execute('ALTER TABLE account_transactions ADD COLUMN purchase_invoice_id INTEGER');
+
+    if (oldVersion < 15) {
+      final salesColumns = await db.rawQuery(
+        'PRAGMA table_info(sales)',
+      );
+
+      final clientColumn = salesColumns.firstWhere(
+        (column) => column['name'] == 'client_id',
+        orElse: () => <String, Object?>{},
+      );
+
+      final tankColumn = salesColumns.firstWhere(
+        (column) => column['name'] == 'tank_id',
+        orElse: () => <String, Object?>{},
+      );
+
+      final clientIsNotNull = clientColumn['notnull'] == 1;
+      final tankIsNotNull = tankColumn['notnull'] == 1;
+
+      if (clientIsNotNull || tankIsNotNull) {
+        await db.execute('ALTER TABLE sales RENAME TO sales_old');
+
+        await db.execute('''
+          CREATE TABLE sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_number TEXT UNIQUE,
+            client_id INTEGER,
+            tank_id INTEGER,
+            driver_id INTEGER,
+            supplier_id INTEGER NOT NULL,
+            units INTEGER NOT NULL,
+            sale_price REAL NOT NULL,
+            total_amount REAL NOT NULL,
+            cost_amount REAL NOT NULL,
+            profit_amount REAL NOT NULL,
+            sale_date TEXT NOT NULL,
+            payment_status TEXT NOT NULL,
+            notes TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            is_deleted INTEGER DEFAULT 0,
+            is_synced INTEGER DEFAULT 0,
+            sync_id TEXT UNIQUE NOT NULL,
+            FOREIGN KEY (client_id) REFERENCES clients (id),
+            FOREIGN KEY (tank_id) REFERENCES tanks (id),
+            FOREIGN KEY (driver_id) REFERENCES drivers (id),
+            FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
+            FOREIGN KEY (created_by) REFERENCES users (id)
+          )
+        ''');
+
+        await db.execute('''
+          INSERT INTO sales (
+            id, sale_number, client_id, tank_id, driver_id,
+            supplier_id, units, sale_price, total_amount,
+            cost_amount, profit_amount, sale_date, payment_status,
+            notes, created_by, created_at, updated_at,
+            is_deleted, is_synced, sync_id
+          )
+          SELECT
+            id, sale_number, client_id, tank_id, driver_id,
+            supplier_id, units, sale_price, total_amount,
+            cost_amount, profit_amount, sale_date, payment_status,
+            notes, created_by, created_at, updated_at,
+            is_deleted, is_synced, sync_id
+          FROM sales_old
+        ''');
+
+        await db.execute('DROP TABLE sales_old');
+      }
+    }
+
+    if (oldVersion < 14) {
+      final clientColumns = await db.rawQuery(
+        'PRAGMA table_info(clients)',
+      );
+      final hasClientPhone = clientColumns.any(
+        (column) => column['name'] == 'phone',
+      );
+      if (!hasClientPhone) {
+        await db.execute(
+          'ALTER TABLE clients ADD COLUMN phone TEXT',
+        );
+      }
+
+      final supplierColumns = await db.rawQuery(
+        'PRAGMA table_info(suppliers)',
+      );
+      final hasSupplierPhone = supplierColumns.any(
+        (column) => column['name'] == 'phone',
+      );
+      if (!hasSupplierPhone) {
+        await db.execute(
+          'ALTER TABLE suppliers ADD COLUMN phone TEXT',
+        );
+      }
+    }
+
+    if (oldVersion < 11) {
+      final userColumns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+      final hasUserSyncId = userColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasUserSyncId) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN sync_id TEXT',
+        );
+
+        final userRows = await db.query(
+          'users',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in userRows) {
+          await db.update(
+            'users',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 13) {
+      final userColumns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+      final hasMustChangePassword = userColumns.any(
+        (column) => column['name'] == 'must_change_password',
+      );
+
+      if (!hasMustChangePassword) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0',
+        );
+      }
+    }
+
+    if (oldVersion < 12) {
+      final userColumns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+      final hasFirebaseUid = userColumns.any(
+        (column) => column['name'] == 'firebase_uid',
+      );
+      final hasFirebaseEmail = userColumns.any(
+        (column) => column['name'] == 'firebase_email',
+      );
+
+      if (!hasFirebaseUid) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN firebase_uid TEXT',
+        );
+      }
+
+      if (!hasFirebaseEmail) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN firebase_email TEXT',
+        );
+      }
+    }
+
+    if (oldVersion < 2) {
+      final columns = await db.rawQuery('PRAGMA table_info(users)');
+      final hasDriverId = columns.any(
+        (column) => column['name'] == 'driver_id',
+      );
+
+      if (!hasDriverId) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN driver_id INTEGER',
+        );
+      }
+    }
+
+    if (oldVersion < 3) {
+      final columns = await db.rawQuery('PRAGMA table_info(users)');
+      final hasRecoveryCodeHash = columns.any(
+        (column) => column['name'] == 'recovery_code_hash',
+      );
+
+      if (!hasRecoveryCodeHash) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN recovery_code_hash TEXT',
+        );
+      }
+    }
+
+    if (oldVersion < 10) {
+      final salaryColumns = await db.rawQuery(
+        'PRAGMA table_info(salaries)',
+      );
+      final hasSalarySyncId = salaryColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasSalarySyncId) {
+        await db.execute(
+          'ALTER TABLE salaries ADD COLUMN sync_id TEXT',
+        );
+
+        final salaryRows = await db.query(
+          'salaries',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in salaryRows) {
+          await db.update(
+            'salaries',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 9) {
+      final expenseColumns = await db.rawQuery(
+        'PRAGMA table_info(expenses)',
+      );
+      final hasExpenseSyncId = expenseColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasExpenseSyncId) {
+        await db.execute(
+          'ALTER TABLE expenses ADD COLUMN sync_id TEXT',
+        );
+
+        final expenseRows = await db.query(
+          'expenses',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in expenseRows) {
+          await db.update(
+            'expenses',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 8) {
+      final paymentColumns = await db.rawQuery(
+        'PRAGMA table_info(payments)',
+      );
+      final hasPaymentSyncId = paymentColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasPaymentSyncId) {
+        await db.execute(
+          'ALTER TABLE payments ADD COLUMN sync_id TEXT',
+        );
+
+        final paymentRows = await db.query(
+          'payments',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in paymentRows) {
+          await db.update(
+            'payments',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 7) {
+      final saleColumns = await db.rawQuery(
+        'PRAGMA table_info(sales)',
+      );
+      final hasSaleSyncId = saleColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasSaleSyncId) {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN sync_id TEXT',
+        );
+
+        final saleRows = await db.query(
+          'sales',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in saleRows) {
+          await db.update(
+            'sales',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 6) {
+      final operationColumns = await db.rawQuery(
+        'PRAGMA table_info(filling_operations)',
+      );
+      final hasOperationSyncId = operationColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasOperationSyncId) {
+        await db.execute(
+          'ALTER TABLE filling_operations ADD COLUMN sync_id TEXT',
+        );
+
+        final operationRows = await db.query(
+          'filling_operations',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in operationRows) {
+          await db.update(
+            'filling_operations',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 5) {
+      final tankColumns = await db.rawQuery(
+        'PRAGMA table_info(tanks)',
+      );
+      final hasTankSyncId = tankColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasTankSyncId) {
+        await db.execute(
+          'ALTER TABLE tanks ADD COLUMN sync_id TEXT',
+        );
+
+        final tankRows = await db.query(
+          'tanks',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in tankRows) {
+          await db.update(
+            'tanks',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 4) {
+      final columns = await db.rawQuery('PRAGMA table_info(clients)');
+      final hasSyncId = columns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasSyncId) {
+        await db.execute(
+          'ALTER TABLE clients ADD COLUMN sync_id TEXT',
+        );
+
+        final rows = await db.query(
+          'clients',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in rows) {
+          await db.update(
+            'clients',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+
+      final driverColumns = await db.rawQuery(
+        'PRAGMA table_info(drivers)',
+      );
+      final hasDriverSyncId = driverColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasDriverSyncId) {
+        await db.execute(
+          'ALTER TABLE drivers ADD COLUMN sync_id TEXT',
+        );
+
+        final driverRows = await db.query(
+          'drivers',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in driverRows) {
+          await db.update(
+            'drivers',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+
+      final supplierColumns = await db.rawQuery(
+        'PRAGMA table_info(suppliers)',
+      );
+      final hasSupplierSyncId = supplierColumns.any(
+        (column) => column['name'] == 'sync_id',
+      );
+
+      if (!hasSupplierSyncId) {
+        await db.execute(
+          'ALTER TABLE suppliers ADD COLUMN sync_id TEXT',
+        );
+
+        final supplierRows = await db.query(
+          'suppliers',
+          columns: ['id'],
+          where: 'sync_id IS NULL',
+        );
+
+        const uuid = Uuid();
+        for (final row in supplierRows) {
+          await db.update(
+            'suppliers',
+            {'sync_id': uuid.v4()},
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+        }
+      }
+    }
+
+    if (oldVersion < 18) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS account_transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          account_type TEXT NOT NULL,
+          reference_id INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          transaction_type TEXT NOT NULL,
+          transaction_date TEXT NOT NULL,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (created_by) REFERENCES users (id)
+        )
+      ''');
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_account_transactions_reference
+        ON account_transactions (account_type, reference_id, transaction_date)
+      ''');
+    }
+    if (oldVersion < 20) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS purchase_invoices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          invoice_number TEXT UNIQUE NOT NULL,
+          supplier_id INTEGER NOT NULL,
+          purchase_date TEXT NOT NULL,
+          total_amount REAL NOT NULL,
+          payment_status TEXT NOT NULL,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
+          FOREIGN KEY (created_by) REFERENCES users (id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS purchase_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          purchase_invoice_id INTEGER NOT NULL,
+          item_type TEXT NOT NULL DEFAULT 'tank',
+          units INTEGER NOT NULL,
+          purchase_price REAL NOT NULL,
+          total_amount REAL NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices (id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS inventory_layers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          purchase_item_id INTEGER NOT NULL,
+          item_type TEXT NOT NULL DEFAULT 'tank',
+          original_units INTEGER NOT NULL,
+          remaining_units INTEGER NOT NULL,
+          unit_cost REAL NOT NULL,
+          layer_date TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_purchase_invoices_supplier
+        ON purchase_invoices (supplier_id, purchase_date)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_purchase_items_invoice
+        ON purchase_items (purchase_invoice_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_inventory_layers_fifo
+        ON inventory_layers (item_type, layer_date, id)
+      ''');
+    }
+
+    if (oldVersion < 21) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS sale_inventory_allocations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sale_id INTEGER NOT NULL,
+          inventory_layer_id INTEGER NOT NULL,
+          purchase_item_id INTEGER NOT NULL,
+          supplier_id INTEGER NOT NULL,
+          units INTEGER NOT NULL,
+          unit_cost REAL NOT NULL,
+          cost_amount REAL NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (sale_id) REFERENCES sales (id),
+          FOREIGN KEY (inventory_layer_id) REFERENCES inventory_layers (id),
+          FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id),
+          FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_sale
+        ON sale_inventory_allocations (sale_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_supplier
+        ON sale_inventory_allocations (supplier_id, created_at)
+      ''');
+    }
+
+    if (oldVersion < 19) {
+      await db.execute('ALTER TABLE payments ADD COLUMN payment_method TEXT');
+      await db.execute('ALTER TABLE payments ADD COLUMN reference_number TEXT');
     }
   }
 }

@@ -14,15 +14,12 @@ class SaleService {
     if (sale.totalAmount < 0) {
       throw Exception('إجمالي البيع غير صالح.');
     }
-    if (sale.supplierId == null) {
-      throw Exception('يجب اختيار المورد قبل حفظ البيع.');
-    }
 
     return await db.transaction((txn) async {
       final allocationResult = await _allocateInventoryFIFO(
         txn,
         sale.units,
-        sale.supplierId!,
+        sale.supplierId,
       );
       final now = DateTime.now().toIso8601String();
       final profitAmount = sale.totalAmount - allocationResult.totalCost;
@@ -393,7 +390,6 @@ class SaleService {
     if (sale.id == null) throw Exception('رقم البيع غير موجود.');
     if (sale.units <= 0) throw Exception('يجب أن تكون كمية البيع أكبر من صفر.');
     if (sale.totalAmount < 0) throw Exception('إجمالي البيع غير صالح.');
-    if (sale.supplierId == null) throw Exception('يجب اختيار المورد قبل حفظ البيع.');
 
     final db = await _dbHelper.database;
 
@@ -414,7 +410,7 @@ class SaleService {
       final allocationResult = await _allocateInventoryFIFO(
         txn,
         sale.units,
-        sale.supplierId!,
+        sale.supplierId,
       );
       final now = DateTime.now().toIso8601String();
       final profitAmount = sale.totalAmount - allocationResult.totalCost;

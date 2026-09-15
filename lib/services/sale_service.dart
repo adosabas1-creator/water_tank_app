@@ -14,9 +14,16 @@ class SaleService {
     if (sale.totalAmount < 0) {
       throw Exception('إجمالي البيع غير صالح.');
     }
+    if (sale.supplierId == null) {
+      throw Exception('يجب اختيار المورد قبل حفظ البيع.');
+    }
 
     return await db.transaction((txn) async {
-      final allocationResult = await _allocateInventoryFIFO(txn, sale.units);
+      final allocationResult = await _allocateInventoryFIFO(
+        txn,
+        sale.units,
+        sale.supplierId!,
+      );
       final now = DateTime.now().toIso8601String();
       final profitAmount = sale.totalAmount - allocationResult.totalCost;
 
@@ -51,7 +58,13 @@ class SaleService {
         calculatedSale.toMap()..remove('id'),
       );
 
-      await _insertAllocations(txn, saleId, sale.syncId, allocationResult.allocations, now);
+      await _insertAllocations(
+        txn,
+        saleId,
+        sale.syncId,
+        allocationResult.allocations,
+        now,
+      );
 
       await _createClientDebtIfNeeded(txn, calculatedSale, saleId, now);
 
@@ -86,6 +99,7 @@ class SaleService {
   Future<_InventoryAllocationResult> _allocateInventoryFIFO(
     dynamic txn,
     int requestedUnits,
+    int supplierId,
   ) async {
     if (requestedUnits <= 0) {
       throw Exception('كمية البيع يجب أن تكون أكبر من صفر.');
@@ -102,34 +116,11 @@ class SaleService {
       orderBy: 'layer_date ASC, id ASC',
     );
 
-    final availableUnits = layers.fold<int>(
-      0,
-      (sum, layer) => sum + ((layer['remaining_units'] as num?)?.toInt() ?? 0),
-    );
-
-    if (availableUnits < requestedUnits) {
-      throw Exception(
-        'المخزون غير كافٍ. المتوفر: $availableUnits وحدة، '
-        'والمطلوب: $requestedUnits وحدة.',
-      );
-    }
-
-    var remainingToConsume = requestedUnits;
-    var totalCost = 0.0;
-    final allocations = <Map<String, dynamic>>[];
-    final now = DateTime.now().toIso8601String();
+    var availableSupplierUnits = 0;
+    final supplierLayers = <Map<String, dynamic>>[];
 
     for (final layer in layers) {
-      if (remainingToConsume <= 0) break;
-
-      final layerId = layer['id'] as int;
       final purchaseItemId = layer['purchase_item_id'] as int;
-      final remainingUnits = (layer['remaining_units'] as num).toInt();
-      final unitCost = (layer['unit_cost'] as num).toDouble();
-      final consumedUnits = remainingToConsume < remainingUnits
-          ? remainingToConsume
-          : remainingUnits;
-
       final purchaseItem = await txn.query(
         'purchase_items',
         columns: ['purchase_invoice_id'],
@@ -153,7 +144,36 @@ class SaleService {
         throw Exception('تعذر العثور على فاتورة الشراء المرتبطة بطبقة المخزون.');
       }
 
-      final supplierId = purchaseInvoice.first['supplier_id'] as int;
+      final layerSupplierId = purchaseInvoice.first['supplier_id'] as int;
+      if (layerSupplierId != supplierId) continue;
+
+      supplierLayers.add(layer);
+      availableSupplierUnits +=
+          ((layer['remaining_units'] as num?)?.toInt() ?? 0);
+    }
+
+    if (availableSupplierUnits < requestedUnits) {
+      throw Exception(
+        'مخزون المورد المحدد غير كافٍ. المتوفر للمورد: '
+        '$availableSupplierUnits وحدة، والمطلوب: $requestedUnits وحدة.',
+      );
+    }
+
+    var remainingToConsume = requestedUnits;
+    var totalCost = 0.0;
+    final allocations = <Map<String, dynamic>>[];
+    final now = DateTime.now().toIso8601String();
+
+    for (final layer in supplierLayers) {
+      if (remainingToConsume <= 0) break;
+
+      final layerId = layer['id'] as int;
+      final purchaseItemId = layer['purchase_item_id'] as int;
+      final remainingUnits = (layer['remaining_units'] as num).toInt();
+      final unitCost = (layer['unit_cost'] as num).toDouble();
+      final consumedUnits = remainingToConsume < remainingUnits
+          ? remainingToConsume
+          : remainingUnits;
       final costAmount = consumedUnits * unitCost;
       final newRemainingUnits = remainingUnits - consumedUnits;
 
@@ -182,7 +202,7 @@ class SaleService {
     }
 
     if (remainingToConsume != 0) {
-      throw Exception('تعذر إكمال استهلاك المخزون بطريقة FIFO.');
+      throw Exception('تعذر إكمال استهلاك مخزون المورد بطريقة FIFO.');
     }
 
     return _InventoryAllocationResult(
@@ -241,7 +261,8 @@ class SaleService {
         throw Exception('تعذر العثور على طبقة المخزون لإرجاع كمية البيع.');
       }
 
-      final remainingUnits = (layer.first['remaining_units'] as num?)?.toInt() ?? 0;
+      final remainingUnits =
+          (layer.first['remaining_units'] as num?)?.toInt() ?? 0;
       await txn.update(
         'inventory_layers',
         {
@@ -322,54 +343,21 @@ class SaleService {
     final db = await _dbHelper.database;
 
     return await db.rawQuery('''
-      WITH allocation_data AS (
-        SELECT
-          sia.id AS allocation_id,
-          sia.sale_id,
-          sia.supplier_id,
-          s.name AS supplier_name,
-          sales.units AS sale_units,
-          sales.sale_price,
-          sia.units AS allocated_units,
-          sia.unit_cost,
-          SUM(sia.units) OVER (
-            PARTITION BY sia.sale_id
-            ORDER BY sia.id
-            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-          ) AS units_before
-        FROM sale_inventory_allocations sia
-        INNER JOIN sales ON sales.id = sia.sale_id
-        INNER JOIN suppliers s ON s.id = sia.supplier_id
-        WHERE sia.is_deleted = 0
-          AND sales.is_deleted = 0
-          AND s.is_deleted = 0
-      ),
-      effective_allocations AS (
-        SELECT
-          supplier_id,
-          supplier_name,
-          CASE
-            WHEN units_before IS NULL THEN
-              CASE WHEN allocated_units > sale_units THEN sale_units ELSE allocated_units END
-            WHEN units_before >= sale_units THEN 0
-            WHEN units_before + allocated_units > sale_units THEN sale_units - units_before
-            ELSE allocated_units
-          END AS effective_units,
-          unit_cost,
-          sale_price
-        FROM allocation_data
-      )
       SELECT
-        supplier_id,
-        supplier_name,
-        SUM(effective_units) AS sold_units,
-        SUM(effective_units * unit_cost) AS cost_amount,
-        SUM(effective_units * sale_price) AS sales_amount,
-        SUM((effective_units * sale_price) - (effective_units * unit_cost)) AS profit_amount
-      FROM effective_allocations
-      WHERE effective_units > 0
-      GROUP BY supplier_id, supplier_name
-      ORDER BY supplier_name ASC
+        sia.supplier_id AS supplier_id,
+        s.name AS supplier_name,
+        SUM(sia.units) AS sold_units,
+        SUM(sia.cost_amount) AS cost_amount,
+        SUM(sia.units * sales.sale_price) AS sales_amount,
+        SUM((sia.units * sales.sale_price) - sia.cost_amount) AS profit_amount
+      FROM sale_inventory_allocations sia
+      INNER JOIN sales ON sales.id = sia.sale_id
+      INNER JOIN suppliers s ON s.id = sia.supplier_id
+      WHERE sia.is_deleted = 0
+        AND sales.is_deleted = 0
+        AND s.is_deleted = 0
+      GROUP BY sia.supplier_id, s.name
+      ORDER BY s.name ASC
     ''');
   }
 
@@ -405,6 +393,7 @@ class SaleService {
     if (sale.id == null) throw Exception('رقم البيع غير موجود.');
     if (sale.units <= 0) throw Exception('يجب أن تكون كمية البيع أكبر من صفر.');
     if (sale.totalAmount < 0) throw Exception('إجمالي البيع غير صالح.');
+    if (sale.supplierId == null) throw Exception('يجب اختيار المورد قبل حفظ البيع.');
 
     final db = await _dbHelper.database;
 
@@ -422,7 +411,11 @@ class SaleService {
       await _softDeleteSaleAllocations(txn, oldSale.id!);
       await _softDeleteClientDebt(txn, oldSale);
 
-      final allocationResult = await _allocateInventoryFIFO(txn, sale.units);
+      final allocationResult = await _allocateInventoryFIFO(
+        txn,
+        sale.units,
+        sale.supplierId!,
+      );
       final now = DateTime.now().toIso8601String();
       final profitAmount = sale.totalAmount - allocationResult.totalCost;
 
@@ -456,7 +449,13 @@ class SaleService {
       data['is_synced'] = 0;
       await txn.update('sales', data, where: 'id = ?', whereArgs: [sale.id]);
 
-      await _insertAllocations(txn, sale.id!, sale.syncId, allocationResult.allocations, now);
+      await _insertAllocations(
+        txn,
+        sale.id!,
+        sale.syncId,
+        allocationResult.allocations,
+        now,
+      );
       await _createClientDebtIfNeeded(txn, updatedSale, sale.id!, now);
     });
   }

@@ -29,9 +29,10 @@ class AccountTransactionService {
     return result.map(AccountTransaction.fromMap).toList();
   }
 
-  /// Returns the net balance after subtracting recorded payments.
-  /// Positive = amount owed to the business for a client, or owed by the
-  /// business to a supplier.
+  /// Returns the net balance after account transactions and payments.
+  /// For both clients and suppliers:
+  /// debt increases the balance, adjustment decreases it, and payments
+  /// decrease it as well.
   Future<double> getBalance({
     required String accountType,
     required int referenceId,
@@ -40,7 +41,15 @@ class AccountTransactionService {
 
     final transactionResult = await db.rawQuery(
       '''
-      SELECT COALESCE(SUM(amount), 0) AS total
+      SELECT COALESCE(
+        SUM(
+          CASE
+            WHEN transaction_type = 'adjustment' THEN -amount
+            ELSE amount
+          END
+        ),
+        0
+      ) AS total
       FROM account_transactions
       WHERE account_type = ?
         AND reference_id = ?
@@ -72,8 +81,8 @@ class AccountTransactionService {
     return transactions - payments;
   }
 
-  /// Kept for compatibility with existing callers.
-  /// This now returns the net balance, including recorded payments.
+  /// Compatibility method. Use getBalance when the net account balance is
+  /// required.
   Future<double> getTotalAmount({
     required String accountType,
     required int referenceId,

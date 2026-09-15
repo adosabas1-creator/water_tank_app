@@ -1,3 +1,4 @@
+import '../core/auth/permission_service.dart';
 import '../core/database/database_helper.dart';
 import '../models/tank.dart';
 
@@ -5,6 +6,7 @@ class TankService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
   Future<int> addTank(Tank tank) async {
+    PermissionService.requireManagementRole();
     final db = await _dbHelper.database;
     return await db.insert('tanks', tank.toMap());
   }
@@ -25,22 +27,30 @@ class TankService {
   }
 
   Future<void> updateTank(Tank tank) async {
+    PermissionService.requireManagementRole();
     final db = await _dbHelper.database;
     final data = tank.toMap();
     data['is_synced'] = 0;
-    await db.update('tanks', data, where: 'id = ?', whereArgs: [tank.id]);
+    await db.update(
+      'tanks',
+      data,
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [tank.id],
+    );
   }
 
   Future<void> deleteTank(int id) async {
+    PermissionService.requireManagementRole();
     final db = await _dbHelper.database;
     await db.update(
-        'tanks',
-        {
-          'is_deleted': 1,
-          'is_synced': 0,
-          'updated_at': DateTime.now().toIso8601String()
-        },
-        where: 'id = ?',
-        whereArgs: [id]);
+      'tanks',
+      {
+        'is_deleted': 1,
+        'is_synced': 0,
+        'updated_at': DateTime.now().toIso8601String()
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [id],
+    );
   }
 }

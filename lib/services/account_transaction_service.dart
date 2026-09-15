@@ -29,26 +29,18 @@ class AccountTransactionService {
     return result.map(AccountTransaction.fromMap).toList();
   }
 
-  /// Returns the net account balance.
-  /// Positive = amount owed by the account holder to the business.
-  /// Negative = amount owed by the business to the account holder.
-  ///
-  /// Debts/opening balances/adjustments are treated as positive.
-  /// Payments are stored separately and treated as negative.
+  /// Returns the net balance after subtracting recorded payments.
+  /// Positive = amount owed to the business for a client, or owed by the
+  /// business to a supplier.
   Future<double> getBalance({
     required String accountType,
     required int referenceId,
   }) async {
     final db = await _dbHelper.database;
 
-    final result = await db.rawQuery(
+    final transactionResult = await db.rawQuery(
       '''
-      SELECT COALESCE(SUM(
-        CASE
-          WHEN transaction_type = 'payment' THEN -amount
-          ELSE amount
-        END
-      ), 0) AS balance
+      SELECT COALESCE(SUM(amount), 0) AS total
       FROM account_transactions
       WHERE account_type = ?
         AND reference_id = ?
@@ -57,11 +49,31 @@ class AccountTransactionService {
       [accountType, referenceId],
     );
 
-    return (result.first['balance'] as num?)?.toDouble() ?? 0.0;
+    final paymentType = accountType == 'supplier'
+        ? 'supplier_payment'
+        : 'client_payment';
+
+    final paymentResult = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM payments
+      WHERE payment_type = ?
+        AND reference_id = ?
+        AND is_deleted = 0
+      ''',
+      [paymentType, referenceId],
+    );
+
+    final transactions =
+        (transactionResult.first['total'] as num?)?.toDouble() ?? 0.0;
+    final payments =
+        (paymentResult.first['total'] as num?)?.toDouble() ?? 0.0;
+
+    return transactions - payments;
   }
 
   /// Kept for compatibility with existing callers.
-  /// For supplier/client balances prefer [getBalance].
+  /// This now returns the net balance, including recorded payments.
   Future<double> getTotalAmount({
     required String accountType,
     required int referenceId,

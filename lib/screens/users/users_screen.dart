@@ -1136,6 +1136,65 @@ class _UsersScreenState extends State<UsersScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
+                        icon: const Icon(Icons.person_remove_outlined),
+                        label: const Text('إزالة المستخدمين الافتراضيين'),
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: dialogContext,
+                            builder: (confirmContext) {
+                              return AlertDialog(
+                                title: const Text('إزالة المستخدمين الافتراضيين'),
+                                content: const Text(
+                                  'سيتم إزالة المستخدمين من "مستخدم 1" إلى "مستخدم 10" فقط.\n\n'
+                                  'لن يتم حذف أي مستخدم آخر.\n\n'
+                                  'هل تريد المتابعة؟',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(confirmContext, false),
+                                    child: const Text('إلغاء'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(confirmContext, true),
+                                    child: const Text('نعم، إزالة'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+
+                          if (confirmed != true) return;
+
+                          try {
+                            final count =
+                                await _authService.removeDefaultUsers();
+
+                            if (!mounted || !dialogContext.mounted) return;
+
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'تمت إزالة $count من المستخدمين الافتراضيين.',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!dialogContext.mounted) return;
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text('تعذر إزالة المستخدمين: $e'),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
                         icon: const Icon(Icons.delete_sweep_outlined),
                         label: const Text('تصفير البيانات التشغيلية'),
                         onPressed: () async {

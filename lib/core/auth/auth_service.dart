@@ -160,7 +160,9 @@ class AuthService {
       throw ArgumentError('الاسم الكامل مطلوب');
     }
 
-    if (role != 'admin' && role != 'deputy_manager') {
+    if (role != 'admin' &&
+        role != 'deputy_manager' &&
+        role != 'member') {
       throw ArgumentError('الدور غير صالح');
     }
 
@@ -254,6 +256,21 @@ class AuthService {
     final db = await _dbHelper.database;
     final result = await db.query('users', where: 'is_deleted = 0');
     return result.map((e) => User.fromMap(e)).toList();
+  }
+
+  Future<int> removeDefaultUsers() async {
+    final db = await _dbHelper.database;
+
+    return await db.update(
+      'users',
+      {
+        'is_deleted': 1,
+        'is_synced': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: "username IN (${List.filled(10, '?').join(',')})",
+      whereArgs: List.generate(10, (index) => 'مستخدم ${index + 1}'),
+    );
   }
 
   Future<bool> setRecoveryCode({

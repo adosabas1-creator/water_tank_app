@@ -96,6 +96,39 @@ class DefaultPermissions {
     };
   }
 
+  static Map<String, bool> member() {
+    return {
+      PermissionKeys.clientsView: false,
+      PermissionKeys.clientsAdd: false,
+      PermissionKeys.clientsEdit: false,
+      PermissionKeys.clientsDelete: false,
+
+      PermissionKeys.salesView: false,
+      PermissionKeys.salesAdd: false,
+      PermissionKeys.salesEdit: false,
+      PermissionKeys.salesDelete: false,
+
+      PermissionKeys.suppliersView: false,
+      PermissionKeys.suppliersAdd: false,
+      PermissionKeys.suppliersEdit: false,
+      PermissionKeys.suppliersDelete: false,
+
+      PermissionKeys.driversView: false,
+      PermissionKeys.driversAdd: false,
+      PermissionKeys.driversEdit: false,
+      PermissionKeys.driversDelete: false,
+
+      PermissionKeys.clientStatementsView: false,
+      PermissionKeys.supplierStatementsView: false,
+
+      PermissionKeys.profitsView: false,
+      PermissionKeys.pricesEdit: false,
+
+      PermissionKeys.usersManage: false,
+      PermissionKeys.permissionsManage: false,
+    };
+  }
+
   static Map<String, bool> driver() {
     return {
       PermissionKeys.clientsView: true,

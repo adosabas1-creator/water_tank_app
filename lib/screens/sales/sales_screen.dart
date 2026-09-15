@@ -21,7 +21,6 @@ class _SalesScreenState extends State<SalesScreen> {
 
   final _quantityController = TextEditingController();
   final _priceController = TextEditingController();
-  final _notesController = TextEditingController();
 
   final _saleService = SaleService();
   final _clientService = ClientService();
@@ -53,7 +52,6 @@ class _SalesScreenState extends State<SalesScreen> {
   void dispose() {
     _quantityController.dispose();
     _priceController.dispose();
-    _notesController.dispose();
     super.dispose();
   }
 
@@ -83,9 +81,7 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   void _refreshTotal() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   double get _total {
@@ -150,83 +146,59 @@ class _SalesScreenState extends State<SalesScreen> {
     );
 
     if (picked != null && mounted) {
-      setState(() {
-        _selectedDate = picked;
-      });
+      setState(() => _selectedDate = picked);
     }
   }
 
   Future<void> _openSuppliers() async {
     await Navigator.of(context).pushNamed('/suppliers');
-
     if (!mounted) return;
     await _loadData();
   }
 
   Future<void> _openClients() async {
     await Navigator.of(context).pushNamed('/clients');
-
     if (!mounted) return;
     await _loadData();
   }
 
   Future<void> _saveSale() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     final user = context.read<UserProvider>().currentUser;
-
     if (user == null || user.id == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يجب تسجيل الدخول قبل حفظ البيع'),
-        ),
+        const SnackBar(content: Text('يجب تسجيل الدخول قبل حفظ البيع')),
       );
       return;
     }
 
     if (_selectedSupplierId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى اختيار المورد أولًا'),
-        ),
+        const SnackBar(content: Text('يرجى اختيار المورد أولًا')),
       );
       return;
     }
 
     final quantity = int.tryParse(_quantityController.text.trim());
     final price = double.tryParse(_priceController.text.trim());
-
-    if (quantity == null || quantity <= 0) {
-      return;
-    }
-
-    if (price == null || price < 0) {
-      return;
-    }
+    if (quantity == null || quantity <= 0) return;
+    if (price == null || price < 0) return;
 
     final total = quantity * price;
     final now = DateTime.now().toIso8601String();
-
     final userName =
         user.fullName.trim().isEmpty ? user.username : user.fullName.trim();
 
-    setState(() {
-      _saving = true;
-    });
+    setState(() => _saving = true);
 
     try {
       final sale = Sale(
         syncId: 'sale_${DateTime.now().microsecondsSinceEpoch}',
         saleNumber: 'S-${DateTime.now().millisecondsSinceEpoch}',
-
         clientId: _selectedClientId,
-
-        // لا يتم استخدام الخزان أو السائق في المبيعات الجديدة.
         tankId: null,
         driverId: null,
-
         supplierId: _selectedSupplierId!,
         units: quantity,
         salePrice: price,
@@ -234,24 +206,16 @@ class _SalesScreenState extends State<SalesScreen> {
         costAmount: 0,
         profitAmount: total,
         saleDate: _formatDate(_selectedDate),
-
-        // حقل قديم للتوافق: نساوي حالة العميل.
         paymentStatus: _clientPaymentStatus,
-
         clientPaymentStatus: _clientPaymentStatus,
         createdByName: userName,
-
-        notes: _notesController.text.trim().isEmpty
-            ? null
-            : _notesController.text.trim(),
-
+        notes: null,
         createdBy: user.id!,
         createdAt: now,
         updatedAt: now,
       );
 
       final savedSale = await _saleService.addSale(sale);
-
       if (!mounted) return;
 
       await _loadData();
@@ -271,24 +235,17 @@ class _SalesScreenState extends State<SalesScreen> {
       _clearForm();
     } catch (e) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('تعذر حفظ البيع: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-        });
-      }
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   void _clearForm() {
     _quantityController.clear();
     _priceController.clear();
-    _notesController.clear();
-
     setState(() {
       _selectedClientId = null;
       _selectedSupplierId = null;
@@ -336,18 +293,10 @@ class _SalesScreenState extends State<SalesScreen> {
                   _receiptRow('عدد الوحدات', '$quantity'),
                   _receiptRow('سعر الوحدة', _formatNumber(price)),
                   _receiptRow('التاريخ', date),
-                  const SizedBox(height: 4),
-                  _receiptRow(
-                    'دفع العميل',
-                    _paymentLabel(clientPaymentStatus),
-                  ),
+                  _receiptRow('دفع العميل', _paymentLabel(clientPaymentStatus)),
                   _receiptRow('المستخدم', userName),
                   const Divider(),
-                  _receiptRow(
-                    'الإجمالي',
-                    _formatNumber(total),
-                    bold: true,
-                  ),
+                  _receiptRow('الإجمالي', _formatNumber(total), bold: true),
                 ],
               ),
             ),
@@ -364,11 +313,7 @@ class _SalesScreenState extends State<SalesScreen> {
     );
   }
 
-  Widget _receiptRow(
-    String title,
-    String value, {
-    bool bold = false,
-  }) {
+  Widget _receiptRow(String title, String value, {bool bold = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -401,10 +346,7 @@ class _SalesScreenState extends State<SalesScreen> {
           const SizedBox(width: 8),
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -450,11 +392,6 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Widget _buildSaleForm() {
-    final user = context.read<UserProvider>().currentUser;
-    final userName = user == null
-        ? 'غير مسجل'
-        : (user.fullName.trim().isEmpty ? user.username : user.fullName.trim());
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -481,17 +418,10 @@ class _SalesScreenState extends State<SalesScreen> {
                             ),
                           )
                           .toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedSupplierId = value;
-                        });
-                      },
-                      validator: (value) {
-                        if (value == null) {
-                          return 'المورد مطلوب';
-                        }
-                        return null;
-                      },
+                      onChanged: (value) =>
+                          setState(() => _selectedSupplierId = value),
+                      validator: (value) =>
+                          value == null ? 'المورد مطلوب' : null,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -528,11 +458,8 @@ class _SalesScreenState extends State<SalesScreen> {
                               ),
                             ),
                       ],
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedClientId = value;
-                        });
-                      },
+                      onChanged: (value) =>
+                          setState(() => _selectedClientId = value),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -543,32 +470,33 @@ class _SalesScreenState extends State<SalesScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              InputDecorator(
+                decoration: _decoration('الوحدة'),
+                child: const Text('خزان'),
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _quantityController,
                 keyboardType: TextInputType.number,
                 decoration: _decoration('عدد الوحدات'),
                 validator: (value) {
                   final number = int.tryParse(value?.trim() ?? '');
-                  if (number == null || number <= 0) {
-                    return 'أدخل عدد وحدات صحيح';
-                  }
-                  return null;
+                  return number == null || number <= 0
+                      ? 'أدخل عدد وحدات صحيح'
+                      : null;
                 },
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _priceController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: _decoration('سعر الوحدة'),
                 validator: (value) {
                   final number = double.tryParse(value?.trim() ?? '');
-                  if (number == null || number < 0) {
-                    return 'أدخل سعرًا صحيحًا';
-                  }
-                  return null;
+                  return number == null || number < 0
+                      ? 'أدخل سعرًا صحيحًا'
+                      : null;
                 },
               ),
               const SizedBox(height: 12),
@@ -581,18 +509,12 @@ class _SalesScreenState extends State<SalesScreen> {
                       const Expanded(
                         child: Text(
                           'الإجمالي',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                       ),
                       Text(
                         _formatNumber(_total),
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -606,9 +528,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   decoration: _decoration('التاريخ'),
                   child: Row(
                     children: [
-                      Expanded(
-                        child: Text(_formatDate(_selectedDate)),
-                      ),
+                      Expanded(child: Text(_formatDate(_selectedDate))),
                       const Icon(Icons.calendar_month),
                     ],
                   ),
@@ -619,42 +539,14 @@ class _SalesScreenState extends State<SalesScreen> {
                 initialValue: _clientPaymentStatus,
                 decoration: _decoration('حالة دفع العميل'),
                 items: const [
-                  DropdownMenuItem(
-                    value: 'paid',
-                    child: Text('مدفوع'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'unpaid',
-                    child: Text('آجل'),
-                  ),
+                  DropdownMenuItem(value: 'paid', child: Text('مدفوع')),
+                  DropdownMenuItem(value: 'unpaid', child: Text('آجل')),
                 ],
                 onChanged: (value) {
                   if (value != null) {
-                    setState(() {
-                      _clientPaymentStatus = value;
-                    });
+                    setState(() => _clientPaymentStatus = value);
                   }
                 },
-              ),
-              const SizedBox(height: 12),
-              InputDecorator(
-                decoration: _decoration('المستخدم'),
-                child: Row(
-                  children: [
-                    const Icon(Icons.person),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(userName),
-                    ),
-                    const Icon(Icons.lock_outline, size: 18),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _notesController,
-                maxLines: 2,
-                decoration: _decoration('ملاحظات (اختياري)'),
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
@@ -687,9 +579,7 @@ class _SalesScreenState extends State<SalesScreen> {
       return const Card(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Center(
-            child: Text('لا توجد مبيعات حتى الآن'),
-          ),
+          child: Center(child: Text('لا توجد مبيعات حتى الآن')),
         ),
       );
     }
@@ -708,14 +598,11 @@ class _SalesScreenState extends State<SalesScreen> {
                       child: Icon(Icons.receipt_long),
                     ),
                     title: Text(
-                      '${_clientName(sale.clientId)} — '
-                      '${_formatNumber(sale.totalAmount)}',
+                      '${_clientName(sale.clientId)} — ${_formatNumber(sale.totalAmount)}',
                     ),
                     subtitle: Text(
-                      '${_supplierName(sale.supplierId)} • '
-                      '${sale.saleDate} • '
-                      'العميل: ${_paymentLabel(sale.clientPaymentStatus ?? sale.paymentStatus)} • '
-                      'المورد: ${_paymentLabel(sale.supplierPaymentStatus)}',
+                      '${_supplierName(sale.supplierId)} • ${sale.saleDate} • '
+                      'العميل: ${_paymentLabel(sale.clientPaymentStatus ?? sale.paymentStatus)}',
                     ),
                   ),
                 ),

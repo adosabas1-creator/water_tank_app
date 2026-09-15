@@ -15,8 +15,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
   final ExpenseService _expenseService = ExpenseService();
 
   double _totalSales = 0;
+  double _totalCostOfSales = 0;
   double _totalExpenses = 0;
-  double _netRevenue = 0;
+  double _grossProfit = 0;
+  double _netProfit = 0;
   List<Map<String, dynamic>> _supplierSalesShare = [];
 
   bool _isLoading = true;
@@ -47,19 +49,27 @@ class _ReportsScreenState extends State<ReportsScreen> {
         (sum, sale) => sum + sale.totalAmount,
       );
 
+      final totalCostOfSales = sales.fold<double>(
+        0,
+        (sum, sale) => sum + sale.costAmount,
+      );
+
       final totalExpenses = expenses.fold<double>(
         0,
         (sum, expense) => sum + expense.amount,
       );
 
-      final netRevenue = totalSales - totalExpenses;
+      final grossProfit = totalSales - totalCostOfSales;
+      final netProfit = grossProfit - totalExpenses;
 
       if (!mounted) return;
 
       setState(() {
         _totalSales = totalSales;
+        _totalCostOfSales = totalCostOfSales;
         _totalExpenses = totalExpenses;
-        _netRevenue = netRevenue;
+        _grossProfit = grossProfit;
+        _netProfit = netProfit;
         _supplierSalesShare = supplierSalesShare;
         _isLoading = false;
       });
@@ -87,9 +97,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? _buildError()
               : RefreshIndicator(
@@ -103,6 +111,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         Icons.shopping_cart,
                       ),
                       _buildCard(
+                        'تكلفة المبيعات',
+                        _totalCostOfSales,
+                        Icons.inventory_2_outlined,
+                      ),
+                      _buildCard(
                         'إجمالي المصروفات',
                         _totalExpenses,
                         Icons.money_off,
@@ -111,16 +124,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       const Divider(),
                       const SizedBox(height: 8),
                       _buildCard(
-                        'صافي الإيرادات',
-                        _netRevenue,
+                        'إجمالي الربح',
+                        _grossProfit,
                         Icons.trending_up,
-                        color: _netRevenue >= 0 ? Colors.green : Colors.red,
+                        color: _grossProfit >= 0 ? Colors.green : Colors.red,
+                      ),
+                      _buildCard(
+                        'صافي الربح',
+                        _netProfit,
+                        Icons.account_balance_wallet_outlined,
+                        color: _netProfit >= 0 ? Colors.green : Colors.red,
                       ),
                       const SizedBox(height: 16),
                       const Align(
                         alignment: Alignment.centerRight,
                         child: Text(
-                          'نصيب الموردين من المبيعات',
+                          'تكلفة مخزون الموردين المباع',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -143,8 +162,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             child: Padding(
                               padding: const EdgeInsets.all(12),
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.stretch,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   Text(
                                     supplier['supplier_name']?.toString() ??
@@ -159,7 +177,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                     'الوحدات المباعة: ${supplier['sold_units'] ?? 0}',
                                   ),
                                   Text(
-                                    'تكلفة المبيعات: ${(supplier['cost_amount'] ?? 0).toStringAsFixed(2)} ريال',
+                                    'تكلفة الوحدات المباعة: ${(supplier['cost_amount'] ?? 0).toStringAsFixed(2)} ريال',
                                   ),
                                   Text(
                                     'قيمة المبيعات: ${(supplier['sales_amount'] ?? 0).toStringAsFixed(2)} ريال',
@@ -192,10 +210,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.error_outline,
-              size: 48,
-            ),
+            const Icon(Icons.error_outline, size: 48),
             const SizedBox(height: 12),
             Text(
               _error!,

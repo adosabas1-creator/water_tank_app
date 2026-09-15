@@ -1,0 +1,1 @@
+Codex write permission test. Temporary file; will be removed immediately.

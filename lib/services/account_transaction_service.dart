@@ -7,7 +7,20 @@ class AccountTransactionService {
 
   Future<int> addTransaction(AccountTransaction transaction) async {
     PermissionService.requireManagementRole();
+    if (transaction.amount <= 0 || transaction.referenceId <= 0) {
+      throw ArgumentError('بيانات الحركة المالية غير صالحة.');
+    }
+    if (transaction.accountType != 'supplier' && transaction.accountType != 'client') {
+      throw ArgumentError('نوع الحساب غير صالح.');
+    }
     final db = await _dbHelper.database;
+    final existing = await db.query('account_transactions', columns: ['id', 'is_deleted'], where: 'sync_id = ?', whereArgs: [transaction.syncId], limit: 1);
+    if (existing.isNotEmpty) {
+      if ((existing.first['is_deleted'] as num? ?? 0).toInt() == 1) {
+        throw StateError('هذه الحركة موجودة سابقًا وتم حذفها.');
+      }
+      return (existing.first['id'] as num).toInt();
+    }
     return db.insert('account_transactions', transaction.toMap());
   }
 
@@ -31,6 +44,7 @@ class AccountTransactionService {
 
   Future<void> deleteTransaction(int id) async {
     PermissionService.requireManagementRole();
+    if (id <= 0) throw ArgumentError('رقم الحركة غير صالح.');
     final db = await _dbHelper.database;
     await db.update('account_transactions', {'is_deleted': 1, 'updated_at': DateTime.now().toIso8601String(), 'is_synced': 0}, where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
   }

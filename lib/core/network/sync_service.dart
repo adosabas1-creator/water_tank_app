@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:sqflite/sqflite.dart';
 import '../database/database_helper.dart';
 import 'connectivity_service.dart';
 
@@ -282,15 +283,13 @@ class SyncService {
     final db = await _dbHelper.database;
     try { await db.execute('PRAGMA foreign_keys = ON'); } catch (_) {}
 
-    const uploadOrder = [
+    const order = [
       'suppliers', 'clients', 'drivers', 'tanks',
       'purchase_invoices', 'purchase_items', 'inventory_layers',
       'sales', 'sale_inventory_allocations', 'account_transactions',
       'payments', 'expenses', 'salaries', 'filling_operations',
     ];
-    const downloadOrder = uploadOrder;
-
-    for (final table in uploadOrder) await _uploadTable(table);
-    for (final table in downloadOrder) await _downloadTable(table);
+    for (final table in order) await _uploadTable(table);
+    for (final table in order) await _downloadTable(table);
   }
 }

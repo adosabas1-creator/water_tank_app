@@ -9,11 +9,9 @@ import '../constants/permissions.dart';
 class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
       firebase_auth.FirebaseAuth.instance;
+  final DatabaseHelper _dbHelper = DatabaseHelper();
 
-  Future<String?> signInToFirebase(
-    String email,
-    String password,
-  ) async {
+  Future<String?> signInToFirebase(String email, String password) async {
     final credential = await _firebaseAuth.signInWithEmailAndPassword(
       email: email.trim(),
       password: password,
@@ -21,10 +19,7 @@ class AuthService {
     return credential.user?.uid;
   }
 
-  Future<String?> createFirebaseUser(
-    String email,
-    String password,
-  ) async {
+  Future<String?> createFirebaseUser(String email, String password) async {
     final credential = await _firebaseAuth.createUserWithEmailAndPassword(
       email: email.trim(),
       password: password,
@@ -36,15 +31,11 @@ class AuthService {
 
   Future<void> sendPasswordResetEmail(String email) async {
     final cleanEmail = email.trim();
-
     if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
       throw ArgumentError('أدخل بريدًا إلكترونيًا صحيحًا');
     }
-
     try {
-      await _firebaseAuth.sendPasswordResetEmail(
-        email: cleanEmail,
-      );
+      await _firebaseAuth.sendPasswordResetEmail(email: cleanEmail);
     } on firebase_auth.FirebaseAuthException catch (e) {
       switch (e.code) {
         case 'user-not-found':
@@ -58,54 +49,56 @@ class AuthService {
         case 'too-many-requests':
           throw StateError('تمت محاولات كثيرة. حاول مرة أخرى لاحقًا');
         default:
-          throw StateError(
-            'تعذر إرسال رابط الاستعادة. رمز Firebase: ${e.code}',
-          );
+          throw StateError('تعذر إرسال رابط الاستعادة. رمز Firebase: ${e.code}');
       }
     }
   }
 
-  final DatabaseHelper _dbHelper = DatabaseHelper();
-
   Future<User?> login(String username, String password) async {
+    final cleanUsername = username.trim();
+    if (cleanUsername.isEmpty || password.isEmpty) return null;
+
     final db = await _dbHelper.database;
     final passwordHash = _hashPassword(password);
     final result = await db.query(
       'users',
-      where: 'username = ? AND password_hash = ?',
-      whereArgs: [username, passwordHash],
+      where: 'username = ? AND password_hash = ? AND is_deleted = 0',
+      whereArgs: [cleanUsername, passwordHash],
+      limit: 1,
     );
-    if (result.isNotEmpty) {
-      final user = User.fromMap(result.first);
 
-      if (user.firebaseEmail != null && user.firebaseEmail!.isNotEmpty) {
-        try {
-          final credential = await _firebaseAuth.signInWithEmailAndPassword(
-            email: user.firebaseEmail!.trim(),
-            password: password,
+    if (result.isEmpty) return null;
+
+    final user = User.fromMap(result.first);
+
+    // Firebase is an optional secondary identity check. Local/offline login
+    // remains supported by design, but a successful Firebase login refreshes
+    // the stored UID when necessary.
+    if (user.firebaseEmail != null && user.firebaseEmail!.isNotEmpty) {
+      try {
+        final credential = await _firebaseAuth.signInWithEmailAndPassword(
+          email: user.firebaseEmail!.trim(),
+          password: password,
+        );
+        if (credential.user?.uid != null &&
+            user.firebaseUid != credential.user!.uid) {
+          await db.update(
+            'users',
+            {
+              'firebase_uid': credential.user!.uid,
+              'updated_at': DateTime.now().toIso8601String(),
+              'is_synced': 0,
+            },
+            where: 'id = ? AND is_deleted = 0',
+            whereArgs: [user.id],
           );
-
-          if (credential.user?.uid != null &&
-              user.firebaseUid != credential.user!.uid) {
-            await db.update(
-              'users',
-              {
-                'firebase_uid': credential.user!.uid,
-                'updated_at': DateTime.now().toIso8601String(),
-                'is_synced': 0,
-              },
-              where: 'id = ?',
-              whereArgs: [user.id],
-            );
-          }
-        } catch (_) {
-          // فشل Firebase لا يمنع تسجيل الدخول المحلي.
         }
+      } catch (_) {
+        // Offline/local-first authentication is intentional for this app.
       }
-
-      return user;
     }
-    return null;
+
+    return user;
   }
 
   Future<int> createUser({
@@ -117,22 +110,44 @@ class AuthService {
     int? driverId,
     Map<String, bool>? permissions,
   }) async {
-    final db = await _dbHelper.database;
-    final now = DateTime.now().toIso8601String();
+    final cleanUsername = username.trim();
+    final cleanFullName = fullName.trim();
     final cleanEmail = firebaseEmail?.trim();
+
+    if (cleanUsername.isEmpty) throw ArgumentError('اسم المستخدم مطلوب');
+    if (cleanFullName.isEmpty) throw ArgumentError('الاسم الكامل مطلوب');
+    if (password.length < 6) {
+      throw ArgumentError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
+    }
+    if (role != 'admin' && role != 'deputy_manager' && role != 'member') {
+      throw ArgumentError('الدور غير صالح');
+    }
+
+    final db = await _dbHelper.database;
+    final duplicate = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'username = ? AND is_deleted = 0',
+      whereArgs: [cleanUsername],
+      limit: 1,
+    );
+    if (duplicate.isNotEmpty) {
+      throw ArgumentError('اسم المستخدم مستخدم بالفعل');
+    }
 
     String? firebaseUid;
     if (cleanEmail != null && cleanEmail.isNotEmpty) {
       firebaseUid = await createFirebaseUser(cleanEmail, password);
     }
 
+    final now = DateTime.now().toIso8601String();
     final user = User(
       syncId: const Uuid().v4(),
       firebaseUid: firebaseUid,
       firebaseEmail: cleanEmail?.isEmpty == true ? null : cleanEmail,
-      username: username,
+      username: cleanUsername,
       passwordHash: _hashPassword(password),
-      fullName: fullName,
+      fullName: cleanFullName,
       role: role,
       driverId: driverId,
       permissions: permissions ?? _defaultPermissionsForRole(role),
@@ -140,7 +155,7 @@ class AuthService {
       updatedAt: now,
     );
 
-    return await db.insert('users', user.toMap());
+    return db.insert('users', user.toMap());
   }
 
   Future<bool> updateUser({
@@ -151,23 +166,13 @@ class AuthService {
   }) async {
     final cleanUsername = username.trim();
     final cleanFullName = fullName.trim();
-
-    if (cleanUsername.isEmpty) {
-      throw ArgumentError('اسم المستخدم مطلوب');
-    }
-
-    if (cleanFullName.isEmpty) {
-      throw ArgumentError('الاسم الكامل مطلوب');
-    }
-
-    if (role != 'admin' &&
-        role != 'deputy_manager' &&
-        role != 'member') {
+    if (cleanUsername.isEmpty) throw ArgumentError('اسم المستخدم مطلوب');
+    if (cleanFullName.isEmpty) throw ArgumentError('الاسم الكامل مطلوب');
+    if (role != 'admin' && role != 'deputy_manager' && role != 'member') {
       throw ArgumentError('الدور غير صالح');
     }
 
     final db = await _dbHelper.database;
-
     final duplicate = await db.query(
       'users',
       columns: ['id'],
@@ -175,10 +180,7 @@ class AuthService {
       whereArgs: [cleanUsername, userId],
       limit: 1,
     );
-
-    if (duplicate.isNotEmpty) {
-      throw ArgumentError('اسم المستخدم مستخدم بالفعل');
-    }
+    if (duplicate.isNotEmpty) throw ArgumentError('اسم المستخدم مستخدم بالفعل');
 
     final count = await db.update(
       'users',
@@ -192,13 +194,11 @@ class AuthService {
       where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
-
     return count > 0;
   }
 
   Future<void> updateDriver(int userId, int? driverId) async {
     final db = await _dbHelper.database;
-
     await db.update(
       'users',
       {
@@ -206,13 +206,12 @@ class AuthService {
         'updated_at': DateTime.now().toIso8601String(),
         'is_synced': 0,
       },
-      where: 'id = ?',
+      where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
   }
 
-  Future<void> updatePermissions(
-      int userId, Map<String, bool> newPermissions) async {
+  Future<void> updatePermissions(int userId, Map<String, bool> newPermissions) async {
     final db = await _dbHelper.database;
     await db.update(
       'users',
@@ -221,7 +220,7 @@ class AuthService {
         'updated_at': DateTime.now().toIso8601String(),
         'is_synced': 0,
       },
-      where: 'id = ?',
+      where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
   }
@@ -231,11 +230,8 @@ class AuthService {
     required String newPassword,
   }) async {
     if (newPassword.length < 6) {
-      throw ArgumentError(
-        'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل',
-      );
+      throw ArgumentError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
     }
-
     final db = await _dbHelper.database;
     final count = await db.update(
       'users',
@@ -248,7 +244,6 @@ class AuthService {
       where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
-
     return count > 0;
   }
 
@@ -260,8 +255,7 @@ class AuthService {
 
   Future<int> removeDefaultUsers() async {
     final db = await _dbHelper.database;
-
-    return await db.update(
+    return db.update(
       'users',
       {
         'is_deleted': 1,
@@ -278,14 +272,10 @@ class AuthService {
     required String recoveryCode,
   }) async {
     final code = recoveryCode.trim();
-
     if (code.length < 6) {
-      throw ArgumentError(
-          'رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
+      throw ArgumentError('رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
     }
-
     final db = await _dbHelper.database;
-
     final count = await db.update(
       'users',
       {
@@ -296,7 +286,6 @@ class AuthService {
       where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
-
     return count > 0;
   }
 
@@ -305,18 +294,13 @@ class AuthService {
     required String recoveryCode,
   }) async {
     final db = await _dbHelper.database;
-
     final result = await db.query(
       'users',
       columns: ['id'],
       where: 'username = ? AND recovery_code_hash = ? AND is_deleted = 0',
-      whereArgs: [
-        username.trim(),
-        _hashPassword(recoveryCode.trim()),
-      ],
+      whereArgs: [username.trim(), _hashPassword(recoveryCode.trim())],
       limit: 1,
     );
-
     return result.isNotEmpty;
   }
 
@@ -328,23 +312,15 @@ class AuthService {
     if (newPassword.length < 6) {
       throw ArgumentError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
     }
-
     final db = await _dbHelper.database;
-
     final result = await db.query(
       'users',
       columns: ['id'],
       where: 'username = ? AND recovery_code_hash = ? AND is_deleted = 0',
-      whereArgs: [
-        username.trim(),
-        _hashPassword(recoveryCode.trim()),
-      ],
+      whereArgs: [username.trim(), _hashPassword(recoveryCode.trim())],
       limit: 1,
     );
-
-    if (result.isEmpty) {
-      return false;
-    }
+    if (result.isEmpty) return false;
 
     await db.update(
       'users',
@@ -353,30 +329,24 @@ class AuthService {
         'updated_at': DateTime.now().toIso8601String(),
         'is_synced': 0,
       },
-      where: 'id = ?',
+      where: 'id = ? AND is_deleted = 0',
       whereArgs: [result.first['id']],
     );
-
     return true;
   }
 
   String _hashPassword(String password) {
-    final bytes = utf8.encode(password);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
+    return sha256.convert(utf8.encode(password)).toString();
   }
 
   Map<String, bool> _defaultPermissionsForRole(String role) {
     switch (role) {
       case 'admin':
         return DefaultPermissions.admin();
-
       case 'deputy_manager':
         return DefaultPermissions.deputyManager();
-
       case 'member':
         return DefaultPermissions.member();
-
       default:
         return DefaultPermissions.member();
     }

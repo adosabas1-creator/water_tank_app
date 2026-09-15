@@ -199,4 +199,105 @@ class PurchaseService {
       return invoiceId;
     });
   }
+
+  /// Soft-deletes a purchase invoice and every local record owned by it.
+  ///
+  /// An invoice can only be deleted when it has no active current sale
+  /// allocations. Historical allocations belonging to edited/deleted sales
+  /// do not block deletion. The whole operation is atomic.
+  Future<void> deletePurchase(int invoiceId) async {
+    PermissionService.requireManagementRole();
+
+    if (invoiceId <= 0) {
+      throw ArgumentError('رقم فاتورة الشراء غير صالح.');
+    }
+
+    final db = await _dbHelper.database;
+
+    await db.transaction((txn) async {
+      final invoiceRows = await txn.query(
+        'purchase_invoices',
+        columns: ['id'],
+        where: 'id = ? AND is_deleted = 0',
+        whereArgs: [invoiceId],
+        limit: 1,
+      );
+      if (invoiceRows.isEmpty) {
+        throw StateError('فاتورة الشراء غير موجودة أو محذوفة.');
+      }
+
+      // Only active allocations of active sales are current usage of this
+      // purchase. Historical/deleted allocations must not block deletion.
+      final activeAllocationRows = await txn.rawQuery('''
+        SELECT COALESCE(SUM(sia.units), 0) AS sold_units
+        FROM sale_inventory_allocations sia
+        JOIN purchase_items pi ON pi.id = sia.purchase_item_id
+        JOIN sales s ON s.id = sia.sale_id
+        WHERE pi.purchase_invoice_id = ?
+          AND pi.is_deleted = 0
+          AND sia.is_deleted = 0
+          AND sia.units > 0
+          AND s.is_deleted = 0
+      ''', [invoiceId]);
+
+      final activeSoldUnits =
+          (activeAllocationRows.first['sold_units'] as num?)?.toDouble() ?? 0.0;
+      if (activeSoldUnits > 0.000001) {
+        throw StateError(
+          'لا يمكن حذف فاتورة الشراء لأنها مرتبطة بمخزون مستخدم في مبيعات نشطة.',
+        );
+      }
+
+      final now = DateTime.now().toIso8601String();
+
+      await txn.update(
+        'inventory_layers',
+        {'is_deleted': 1, 'is_synced': 0, 'updated_at': now},
+        where: '''
+          purchase_item_id IN (
+            SELECT id FROM purchase_items WHERE purchase_invoice_id = ?
+          )
+          AND is_deleted = 0
+        ''',
+        whereArgs: [invoiceId],
+      );
+
+      await txn.update(
+        'purchase_items',
+        {'is_deleted': 1, 'is_synced': 0, 'updated_at': now},
+        where: 'purchase_invoice_id = ? AND is_deleted = 0',
+        whereArgs: [invoiceId],
+      );
+
+      await txn.update(
+        'account_transactions',
+        {'is_deleted': 1, 'is_synced': 0, 'updated_at': now},
+        where: '''
+          purchase_invoice_id = ?
+          AND account_type = 'supplier'
+          AND transaction_type = 'debt'
+          AND is_deleted = 0
+        ''',
+        whereArgs: [invoiceId],
+      );
+
+      await txn.update(
+        'payments',
+        {'is_deleted': 1, 'is_synced': 0, 'updated_at': now},
+        where: '''
+          purchase_invoice_id = ?
+          AND payment_type = 'supplier_payment'
+          AND is_deleted = 0
+        ''',
+        whereArgs: [invoiceId],
+      );
+
+      await txn.update(
+        'purchase_invoices',
+        {'is_deleted': 1, 'is_synced': 0, 'updated_at': now},
+        where: 'id = ? AND is_deleted = 0',
+        whereArgs: [invoiceId],
+      );
+    });
+  }
 }

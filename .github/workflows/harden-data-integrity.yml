@@ -2,48 +2,47 @@ name: Harden data integrity and sync conflicts
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   harden:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Apply integrity hardening
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              s = p.read_text()
-              if old not in s:
-                  raise SystemExit(f'Expected text not found in {path}: {old[:100]!r}')
-              p.write_text(s.replace(old, new, 1))
-
-          # Enable SQLite foreign-key enforcement for every opened connection.
           p = Path('lib/core/database/database_helper.dart')
           s = p.read_text()
-          old = "    return await openDatabase(\n      path,\n      version: AppConstants.localDbVersion,"
-          new = "    return await openDatabase(\n      path,\n      version: AppConstants.localDbVersion,\n      onConfigure: (db) async {\n        await db.execute('PRAGMA foreign_keys = ON');\n      },"
-          if old in s and 'onConfigure: (db) async' not in s:
-              s = s.replace(old, new, 1)
-              p.write_text(s)
+          old = """    return await openDatabase(
+      path,
+      version: AppConstants.localDbVersion,
+"""
+          new = """    return await openDatabase(
+      path,
+      version: AppConstants.localDbVersion,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
+"""
+          if 'PRAGMA foreign_keys = ON' not in s:
+              if old not in s: raise SystemExit('database marker not found')
+              p.write_text(s.replace(old, new, 1))
 
-          # Make all sync downloads refuse to overwrite a newer local record.
           p = Path('lib/core/network/sync_service.dart')
           s = p.read_text()
-          helper = """
-  bool _shouldApplyRemote(Map<String, dynamic> local, Map<String, dynamic> remote) {
-    // A local unsynced change must never be overwritten by a download pass.
+          helper = """  bool _shouldApplyRemote(Map<String, dynamic> local, Map<String, dynamic> remote) {
     if ((local['is_synced'] as num?)?.toInt() == 0) return false;
-
     final localUpdated = DateTime.tryParse(local['updated_at']?.toString() ?? '');
     final remoteUpdated = DateTime.tryParse(remote['updated_at']?.toString() ?? '');
     if (remoteUpdated == null) return false;
@@ -52,62 +51,22 @@ jobs:
   }
 
 """
-          marker = '  Future<void> syncClients() async {'
           if '_shouldApplyRemote(Map<String, dynamic> local' not in s:
-              if marker not in s:
-                  raise SystemExit('SyncService insertion marker not found')
+              marker = '  Future<void> syncClients() async {'
+              if marker not in s: raise SystemExit('sync marker not found')
               s = s.replace(marker, helper + marker, 1)
-
-          # Every existing download upsert must be conflict-aware.
           pattern = re.compile(r"if \(existing\.isEmpty\) \{\n\s+await db\.insert\(([^\n]+)\);\n\s+\} else \{\n\s+await db\.update\(\n\s+([^\n]+),\n\s+data,\n\s+where: 'sync_id = \?',\n\s+whereArgs: \[syncId\],\n\s+\);\n\s+\}")
           def repl(m):
-              insert_args, table = m.group(1), m.group(2)
-              return (f"if (existing.isEmpty) {{\n"
-                      f"          await db.insert({insert_args});\n"
-                      f"        }} else if (_shouldApplyRemote(existing.first, data)) {{\n"
-                      f"          await db.update(\n"
-                      f"            {table},\n"
-                      f"            data,\n"
-                      f"            where: 'sync_id = ?',\n"
-                      f"            whereArgs: [syncId],\n"
-                      f"          );\n"
-                      f"        }}")
-          s2, count = pattern.subn(repl, s)
-          if count == 0:
-              raise SystemExit('No download upsert blocks found in SyncService')
-          p.write_text(s2)
+              return f"if (existing.isEmpty) {{\n          await db.insert({m.group(1)});\n        }} else if (_shouldApplyRemote(existing.first, data)) {{\n          await db.update(\n            {m.group(2)},\n            data,\n            where: 'sync_id = ?',\n            whereArgs: [syncId],\n          );\n        }}"
+          s, count = pattern.subn(repl, s)
+          if count == 0: raise SystemExit('no sync upserts found')
+          p.write_text(s)
 
-          # Idempotency: retries of the same logical mutation return/update the existing record
-          # instead of creating a second business operation. UNIQUE(sync_id) remains the DB backstop.
-          def add_guard(path, method_sig, table):
-              p = Path(path)
-              s = p.read_text()
-              marker = method_sig
-              if marker not in s:
-                  raise SystemExit(f'Method marker not found in {path}')
-              guard = (marker + "\n" +
-                       "    final existing = await _dbHelper.database.then((db) => db.query(\n" +
-                       f"      '{table}',\n" +
-                       "      columns: ['id', 'is_deleted'],\n" +
-                       "      where: 'sync_id = ?',\n" +
-                       "      whereArgs: [" + ('invoice.syncId' if table == 'purchase_invoices' else 'sale.syncId') + "],\n" +
-                       "      limit: 1,\n" +
-                       "    ));\n" +
-                       "    if (existing.isNotEmpty) {\n" +
-                       "      if ((existing.first['is_deleted'] as num?)?.toInt() == 1) {\n" +
-                       "        throw StateError('هذه العملية موجودة مسبقًا وتم حذفها. استخدم عملية جديدة.');\n" +
-                       "      }\n" +
-                       "      return " + ('Sale.fromMap(existing.first)' if table == 'sales' else 'existing.first[\'id\'] as int') + ";\n" +
-                       "    }\n")
-              if 'final existing = await _dbHelper.database.then' not in s:
-                  s = s.replace(marker, guard, 1)
-                  p.write_text(s)
-
-          # Sale needs the full object back on retry.
           p = Path('lib/services/sale_service.dart')
           s = p.read_text()
-          marker = '  Future<Sale> addSale(Sale sale) async {\n'
-          guard = """  Future<Sale> addSale(Sale sale) async {
+          if "whereArgs: [sale.syncId]" not in s:
+              marker = '  Future<Sale> addSale(Sale sale) async {\n'
+              guard = """  Future<Sale> addSale(Sale sale) async {
     final db = await _dbHelper.database;
     final existing = await db.query(
       'sales',
@@ -123,17 +82,16 @@ jobs:
     }
     PermissionService.requirePermission(PermissionKeys.salesAdd);
 """
-          if marker in s and "where: 'sync_id = ?',\n      whereArgs: [sale.syncId]" not in s:
+              if marker not in s: raise SystemExit('sale marker not found')
               s = s.replace(marker, guard, 1)
-              # The original next line would now duplicate the permission call; remove only the first duplicate.
               s = s.replace("    PermissionService.requirePermission(PermissionKeys.salesAdd);\n    final db = await _dbHelper.database;\n\n    if (sale.units", "    if (sale.units", 1)
               p.write_text(s)
 
-          # Purchase retry is idempotent by invoice sync_id.
           p = Path('lib/services/purchase_service.dart')
           s = p.read_text()
-          marker = "  }) async {\n    PermissionService.requireManagementRole();\n    final db = await _dbHelper.database;"
-          replacement = """  }) async {
+          if "whereArgs: [invoice.syncId]" not in s:
+              marker = "  }) async {\n    PermissionService.requireManagementRole();\n    final db = await _dbHelper.database;\n"
+              guard = """  }) async {
     PermissionService.requireManagementRole();
     final db = await _dbHelper.database;
     final existing = await db.query(
@@ -148,21 +106,18 @@ jobs:
         throw StateError('هذه الفاتورة موجودة مسبقًا وتم حذفها. استخدم رقم مزامنة جديد.');
       }
       return existing.first['id'] as int;
-    }"""
-          if marker in s and "where: 'sync_id = ?',\n      whereArgs: [invoice.syncId]" not in s:
-              s = s.replace(marker, replacement, 1)
-              p.write_text(s)
-
+    }
+"""
+              if marker not in s: raise SystemExit('purchase marker not found')
+              p.write_text(s.replace(marker, guard, 1))
           PY
 
-      - name: Commit hardening changes
+      - name: Commit changes
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add lib/core/database/database_helper.dart lib/core/network/sync_service.dart lib/services/sale_service.dart lib/services/purchase_service.dart
-          if git diff --cached --quiet; then
-            echo "No hardening changes were necessary."
-            exit 0
-          fi
+          if git diff --cached --quiet; then exit 0; fi
           git commit -m "Prevent duplicate operations and unsafe sync overwrites"
           git push origin main

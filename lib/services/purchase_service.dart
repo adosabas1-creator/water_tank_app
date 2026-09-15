@@ -14,8 +14,37 @@ class PurchaseService {
   }) async {
     PermissionService.requireManagementRole();
     final db = await _dbHelper.database;
+
+    final existing = await db.query(
+      'purchase_invoices',
+      columns: ['id', 'is_deleted'],
+      where: 'sync_id = ?',
+      whereArgs: [invoice.syncId],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) {
+      if ((existing.first['is_deleted'] as num?)?.toInt() == 1) {
+        throw StateError('هذه الفاتورة موجودة مسبقًا وتم حذفها. استخدم عملية شراء جديدة.');
+      }
+      return existing.first['id'] as int;
+    }
+
+    if (invoice.totalAmount < 0 || item.units <= 0 || item.purchasePrice < 0) {
+      throw ArgumentError('بيانات الشراء غير صالحة.');
+    }
+    if (invoice.supplierId <= 0) {
+      throw ArgumentError('المورد غير صالح.');
+    }
+    if (item.totalAmount < 0) {
+      throw ArgumentError('إجمالي صنف الشراء غير صالح.');
+    }
+
     return await db.transaction((txn) async {
-      final invoiceId = await txn.insert('purchase_invoices', invoice.toMap()..remove('id'));
+      final invoiceId = await txn.insert(
+        'purchase_invoices',
+        invoice.toMap()..remove('id'),
+      );
+
       final itemWithInvoice = PurchaseItem(
         purchaseInvoiceId: invoiceId,
         itemType: item.itemType,
@@ -28,7 +57,11 @@ class PurchaseService {
         isSynced: item.isSynced,
         syncId: item.syncId,
       );
-      final itemId = await txn.insert('purchase_items', itemWithInvoice.toMap()..remove('id'));
+      final itemId = await txn.insert(
+        'purchase_items',
+        itemWithInvoice.toMap()..remove('id'),
+      );
+
       final layer = InventoryLayer(
         purchaseItemId: itemId,
         itemType: item.itemType,
@@ -41,6 +74,7 @@ class PurchaseService {
         syncId: 'layer_${invoice.syncId}_$itemId',
       );
       await txn.insert('inventory_layers', layer.toMap()..remove('id'));
+
       if (invoice.paymentStatus == 'unpaid') {
         final now = DateTime.now().toIso8601String();
         final transaction = AccountTransaction(
@@ -59,6 +93,7 @@ class PurchaseService {
         );
         await txn.insert('account_transactions', transaction.toMap());
       }
+
       return invoiceId;
     });
   }

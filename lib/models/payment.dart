@@ -1,10 +1,10 @@
 class Payment {
   final int? id;
   final String syncId;
-  final String paymentType; // client_payment / supplier_payment
-  final int referenceId; // client_id or supplier_id
-  final int? purchaseInvoiceId; // supplier payment can optionally target a purchase invoice
-  final String paymentKey; // business idempotency key
+  final String paymentType;
+  final int referenceId;
+  final int? purchaseInvoiceId;
+  final String paymentKey;
   final double amount;
   final String? paymentMethod;
   final String? referenceNumber;
@@ -22,7 +22,7 @@ class Payment {
     required this.paymentType,
     required this.referenceId,
     this.purchaseInvoiceId,
-    required this.paymentKey,
+    this.paymentKey = '',
     required this.amount,
     this.paymentMethod,
     this.referenceNumber,
@@ -42,7 +42,7 @@ class Payment {
       'payment_type': paymentType,
       'reference_id': referenceId,
       'purchase_invoice_id': purchaseInvoiceId,
-      'payment_key': paymentKey,
+      'payment_key': paymentKey.trim().isEmpty ? syncId : paymentKey.trim(),
       'amount': amount,
       'payment_method': paymentMethod,
       'reference_number': referenceNumber,
@@ -63,7 +63,7 @@ class Payment {
       paymentType: map['payment_type'] as String,
       referenceId: (map['reference_id'] as num).toInt(),
       purchaseInvoiceId: (map['purchase_invoice_id'] as num?)?.toInt(),
-      paymentKey: (map['payment_key'] as String?) ?? 'legacy_payment_${map['id']}',
+      paymentKey: (map['payment_key'] as String?) ?? '',
       amount: (map['amount'] as num).toDouble(),
       paymentMethod: map['payment_method'] as String?,
       referenceNumber: map['reference_number'] as String?,

@@ -7,7 +7,33 @@ class PaymentService {
 
   Future<int> addPayment(Payment payment) async {
     PermissionService.requireManagementRole();
+
+    if (payment.amount <= 0) {
+      throw ArgumentError('مبلغ الدفعة يجب أن يكون أكبر من صفر.');
+    }
+    if (payment.referenceId <= 0) {
+      throw ArgumentError('الجهة المرتبطة بالدفعة غير صالحة.');
+    }
+    if (payment.paymentType != 'client_payment' &&
+        payment.paymentType != 'supplier_payment') {
+      throw ArgumentError('نوع الدفعة غير صالح.');
+    }
+
     final db = await _dbHelper.database;
+    final existing = await db.query(
+      'payments',
+      columns: ['id', 'is_deleted'],
+      where: 'sync_id = ?',
+      whereArgs: [payment.syncId],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) {
+      if ((existing.first['is_deleted'] as num?)?.toInt() == 1) {
+        throw StateError('هذه الدفعة موجودة مسبقًا وتم حذفها. استخدم عملية جديدة.');
+      }
+      return existing.first['id'] as int;
+    }
+
     return await db.insert('payments', payment.toMap());
   }
 
@@ -31,6 +57,13 @@ class PaymentService {
 
   Future<void> updatePayment(Payment payment) async {
     PermissionService.requireManagementRole();
+    if (payment.id == null || payment.amount <= 0 || payment.referenceId <= 0) {
+      throw ArgumentError('بيانات الدفعة غير صالحة.');
+    }
+    if (payment.paymentType != 'client_payment' &&
+        payment.paymentType != 'supplier_payment') {
+      throw ArgumentError('نوع الدفعة غير صالح.');
+    }
     final db = await _dbHelper.database;
     final data = payment.toMap();
     data['is_synced'] = 0;

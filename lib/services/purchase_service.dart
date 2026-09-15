@@ -1,3 +1,4 @@
+import '../core/auth/permission_service.dart';
 import '../core/database/database_helper.dart';
 import '../models/account_transaction.dart';
 import '../models/inventory_layer.dart';
@@ -11,13 +12,10 @@ class PurchaseService {
     required PurchaseInvoice invoice,
     required PurchaseItem item,
   }) async {
+    PermissionService.requireManagementRole();
     final db = await _dbHelper.database;
     return await db.transaction((txn) async {
-      final invoiceId = await txn.insert(
-        'purchase_invoices',
-        invoice.toMap()..remove('id'),
-      );
-
+      final invoiceId = await txn.insert('purchase_invoices', invoice.toMap()..remove('id'));
       final itemWithInvoice = PurchaseItem(
         purchaseInvoiceId: invoiceId,
         itemType: item.itemType,
@@ -30,12 +28,7 @@ class PurchaseService {
         isSynced: item.isSynced,
         syncId: item.syncId,
       );
-
-      final itemId = await txn.insert(
-        'purchase_items',
-        itemWithInvoice.toMap()..remove('id'),
-      );
-
+      final itemId = await txn.insert('purchase_items', itemWithInvoice.toMap()..remove('id'));
       final layer = InventoryLayer(
         purchaseItemId: itemId,
         itemType: item.itemType,
@@ -47,15 +40,9 @@ class PurchaseService {
         updatedAt: item.updatedAt,
         syncId: 'layer_${invoice.syncId}_$itemId',
       );
-
-      await txn.insert(
-        'inventory_layers',
-        layer.toMap()..remove('id'),
-      );
-
+      await txn.insert('inventory_layers', layer.toMap()..remove('id'));
       if (invoice.paymentStatus == 'unpaid') {
         final now = DateTime.now().toIso8601String();
-
         final transaction = AccountTransaction(
           accountType: 'supplier',
           referenceId: invoice.supplierId,
@@ -70,13 +57,8 @@ class PurchaseService {
           isSynced: false,
           syncId: 'purchase_debt_${invoice.syncId}',
         );
-
-        await txn.insert(
-          'account_transactions',
-          transaction.toMap(),
-        );
+        await txn.insert('account_transactions', transaction.toMap());
       }
-
       return invoiceId;
     });
   }

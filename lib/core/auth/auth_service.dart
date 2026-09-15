@@ -374,11 +374,11 @@ class AuthService {
       case 'deputy_manager':
         return DefaultPermissions.deputyManager();
 
-      case 'driver':
-        return DefaultPermissions.driver();
+      case 'member':
+        return DefaultPermissions.member();
 
       default:
-        return DefaultPermissions.driver();
+        return DefaultPermissions.member();
     }
   }
 }

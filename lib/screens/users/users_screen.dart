@@ -345,6 +345,10 @@ class _UsersScreenState extends State<UsersScreen> {
                           value: 'deputy_manager',
                           child: Text('نائب مدير'),
                         ),
+                        DropdownMenuItem(
+                          value: 'member',
+                          child: Text('عضو'),
+                        ),
                       ],
                       onChanged: isSaving
                           ? null
@@ -495,6 +499,10 @@ class _UsersScreenState extends State<UsersScreen> {
                           DropdownMenuItem(
                             value: 'deputy_manager',
                             child: Text('نائب مدير'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'member',
+                            child: Text('عضو'),
                           ),
                         ],
                         onChanged: isSaving

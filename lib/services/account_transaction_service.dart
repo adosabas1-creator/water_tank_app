@@ -29,7 +29,13 @@ class AccountTransactionService {
     return result.map(AccountTransaction.fromMap).toList();
   }
 
-  Future<double> getTotalAmount({
+  /// Returns the net account balance.
+  /// Positive = amount owed by the account holder to the business.
+  /// Negative = amount owed by the business to the account holder.
+  ///
+  /// Debts/opening balances/adjustments are treated as positive.
+  /// Payments are stored separately and treated as negative.
+  Future<double> getBalance({
     required String accountType,
     required int referenceId,
   }) async {
@@ -37,7 +43,12 @@ class AccountTransactionService {
 
     final result = await db.rawQuery(
       '''
-      SELECT COALESCE(SUM(amount), 0) AS total
+      SELECT COALESCE(SUM(
+        CASE
+          WHEN transaction_type = 'payment' THEN -amount
+          ELSE amount
+        END
+      ), 0) AS balance
       FROM account_transactions
       WHERE account_type = ?
         AND reference_id = ?
@@ -46,7 +57,19 @@ class AccountTransactionService {
       [accountType, referenceId],
     );
 
-    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
+    return (result.first['balance'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  /// Kept for compatibility with existing callers.
+  /// For supplier/client balances prefer [getBalance].
+  Future<double> getTotalAmount({
+    required String accountType,
+    required int referenceId,
+  }) async {
+    return getBalance(
+      accountType: accountType,
+      referenceId: referenceId,
+    );
   }
 
   Future<void> deleteTransaction(int id) async {
@@ -57,6 +80,7 @@ class AccountTransactionService {
       {
         'is_deleted': 1,
         'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
       },
       where: 'id = ?',
       whereArgs: [id],

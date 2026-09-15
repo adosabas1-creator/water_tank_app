@@ -12,1114 +12,285 @@ class SyncService {
 
   static const String businessId = 'alborai_water_tank';
 
-  Future<void> syncClients() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
+  CollectionReference<Map<String, dynamic>> _collection(String table) =>
+      _firestore.collection('businesses').doc(businessId).collection(table);
 
+  Future<bool> _ready() async =>
+      await _connectivity.isOnline() && _auth.currentUser != null;
+
+  Future<List<String>> _columns(Database db, String table) async {
+    final rows = await db.rawQuery('PRAGMA table_info($table)');
+    return rows.map((e) => e['name'].toString()).toList();
+  }
+
+  Future<String?> _localSyncId(Database db, String table, dynamic id) async {
+    if (id == null) return null;
+    final rows = await db.query(table,
+        columns: ['sync_id'], where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : rows.first['sync_id']?.toString();
+  }
+
+  Future<int?> _localId(Database db, String table, dynamic syncId) async {
+    if (syncId == null || syncId.toString().isEmpty) return null;
+    final rows = await db.query(table,
+        columns: ['id'], where: 'sync_id = ?', whereArgs: [syncId], limit: 1);
+    return rows.isEmpty ? null : (rows.first['id'] as num).toInt();
+  }
+
+  Future<Map<String, dynamic>> _uploadData(
+      Database db, String table, Map<String, dynamic> row) async {
+    final data = Map<String, dynamic>.from(row)..remove('id');
+    data.remove('is_synced');
+
+    if (table == 'tanks') {
+      data['driver_sync_id'] = await _localSyncId(db, 'drivers', row['driver_id']);
+      data.remove('driver_id');
+    } else if (table == 'filling_operations') {
+      data['tank_sync_id'] = await _localSyncId(db, 'tanks', row['tank_id']);
+      data['supplier_sync_id'] = await _localSyncId(db, 'suppliers', row['supplier_id']);
+      data['employee_sync_id'] = await _localSyncId(db, 'users', row['employee_id']);
+      data['created_by_sync_id'] = await _localSyncId(db, 'users', row['created_by']);
+      data.remove('tank_id');
+      data.remove('supplier_id');
+      data.remove('employee_id');
+      data.remove('created_by');
+    } else if (table == 'sales') {
+      data['client_sync_id'] = await _localSyncId(db, 'clients', row['client_id']);
+      data['tank_sync_id'] = await _localSyncId(db, 'tanks', row['tank_id']);
+      data['driver_sync_id'] = await _localSyncId(db, 'drivers', row['driver_id']);
+      data['supplier_sync_id'] = await _localSyncId(db, 'suppliers', row['supplier_id']);
+      data['created_by_sync_id'] = await _localSyncId(db, 'users', row['created_by']);
+      data.remove('client_id');
+      data.remove('tank_id');
+      data.remove('driver_id');
+      data.remove('supplier_id');
+      data.remove('created_by');
+    } else if (table == 'payments') {
+      final type = row['payment_type']?.toString();
+      data['reference_sync_id'] = type == 'client_payment'
+          ? await _localSyncId(db, 'clients', row['reference_id'])
+          : type == 'supplier_payment'
+              ? await _localSyncId(db, 'suppliers', row['reference_id'])
+              : null;
+      data['created_by_sync_id'] = await _localSyncId(db, 'users', row['created_by']);
+      data.remove('reference_id');
+      data.remove('created_by');
+    } else if (table == 'salaries') {
+      data['employee_sync_id'] = await _localSyncId(db, 'users', row['employee_id']);
+      data['created_by_sync_id'] = await _localSyncId(db, 'users', row['created_by']);
+      data.remove('employee_id');
+      data.remove('created_by');
+    } else if (table == 'purchase_invoices') {
+      data['supplier_sync_id'] = await _localSyncId(db, 'suppliers', row['supplier_id']);
+      data['created_by_sync_id'] = await _localSyncId(db, 'users', row['created_by']);
+      data.remove('supplier_id');
+      data.remove('created_by');
+    } else if (table == 'purchase_items') {
+      data['purchase_invoice_sync_id'] =
+          await _localSyncId(db, 'purchase_invoices', row['purchase_invoice_id']);
+      data.remove('purchase_invoice_id');
+    } else if (table == 'inventory_layers') {
+      data['purchase_item_sync_id'] =
+          await _localSyncId(db, 'purchase_items', row['purchase_item_id']);
+      data.remove('purchase_item_id');
+    } else if (table == 'sale_inventory_allocations') {
+      data['sale_sync_id'] = await _localSyncId(db, 'sales', row['sale_id']);
+      data['inventory_layer_sync_id'] =
+          await _localSyncId(db, 'inventory_layers', row['inventory_layer_id']);
+      data['purchase_item_sync_id'] =
+          await _localSyncId(db, 'purchase_items', row['purchase_item_id']);
+      data['supplier_sync_id'] = await _localSyncId(db, 'suppliers', row['supplier_id']);
+      data.remove('sale_id');
+      data.remove('inventory_layer_id');
+      data.remove('purchase_item_id');
+      data.remove('supplier_id');
+    } else if (table == 'account_transactions') {
+      final type = row['account_type']?.toString();
+      data['reference_sync_id'] = type == 'client'
+          ? await _localSyncId(db, 'clients', row['reference_id'])
+          : type == 'supplier'
+              ? await _localSyncId(db, 'suppliers', row['reference_id'])
+              : null;
+      data['created_by_sync_id'] = await _localSyncId(db, 'users', row['created_by']);
+      data.remove('reference_id');
+      data.remove('created_by');
+    } else if (table == 'expenses') {
+      data['created_by_sync_id'] = await _localSyncId(db, 'users', row['created_by']);
+      data.remove('created_by');
+    }
+    return data;
+  }
+
+  Future<void> _uploadTable(String table) async {
+    if (!await _ready()) return;
     final db = await _dbHelper.database;
-
-    final rows = await db.query(
-      'clients',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
+    final rows = await db.query(table, where: 'is_synced = 0');
     for (final row in rows) {
+      final syncId = row['sync_id']?.toString();
+      if (syncId == null || syncId.isEmpty) continue;
       try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        final createdBy = row['created_by'];
-        data.remove('created_by');
-        if (createdBy != null) {
-          final userRows = await db.query(
-            'users',
-            columns: ['sync_id'],
-            where: 'id = ?',
-            whereArgs: [createdBy],
-            limit: 1,
-          );
-          if (userRows.isNotEmpty) {
-            data['created_by_sync_id'] = userRows.first['sync_id'];
-          }
+        final data = await _uploadData(db, table, row);
+        await _collection(table).doc(syncId).set(data, SetOptions(merge: true));
+        final current = await db.query(table,
+            columns: ['updated_at'], where: 'id = ?', whereArgs: [row['id']], limit: 1);
+        if (current.isNotEmpty && current.first['updated_at'] == row['updated_at']) {
+          await db.update(table, {'is_synced': 1}, where: 'id = ?', whereArgs: [row['id']]);
         }
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('clients')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'clients',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
       } catch (e) {
-        debugPrint('Client sync error: $e');
+        debugPrint('$table upload error: $e');
       }
     }
   }
 
-  Future<void> syncSuppliers() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final rows = await db.query(
-      'suppliers',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final row in rows) {
-      try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('suppliers')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'suppliers',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
-      } catch (e) {
-        debugPrint('Supplier sync error: $e');
-      }
-    }
+  bool _remoteIsNewer(Map<String, dynamic> local, Map<String, dynamic> remote) {
+    if ((local['is_synced'] as num? ?? 0).toInt() == 0) return false;
+    final r = DateTime.tryParse(remote['updated_at']?.toString() ?? '');
+    final l = DateTime.tryParse(local['updated_at']?.toString() ?? '');
+    if (r == null || l == null) return false;
+    return r.isAfter(l);
   }
 
-  Future<void> syncDrivers() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
+  Future<Map<String, dynamic>?> _downloadData(
+      Database db, String table, Map<String, dynamic> remote) async {
+    final data = Map<String, dynamic>.from(remote);
+    data.remove('id');
+    data.remove('is_synced');
 
-    final db = await _dbHelper.database;
-    final rows = await db.query(
-      'drivers',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final row in rows) {
-      try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('drivers')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'drivers',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
-      } catch (e) {
-        debugPrint('Driver sync error: $e');
-      }
+    Future<bool> requireRef(String key, String localTable, String localKey) async {
+      final value = data[key];
+      if (value == null || value.toString().isEmpty) return true;
+      final id = await _localId(db, localTable, value);
+      if (id == null) return false;
+      data[localKey] = id;
+      return true;
     }
+
+    if (table == 'tanks') {
+      if (!await requireRef('driver_sync_id', 'drivers', 'driver_id')) return null;
+      data.remove('driver_sync_id');
+    } else if (table == 'filling_operations') {
+      if (!await requireRef('tank_sync_id', 'tanks', 'tank_id')) return null;
+      if (!await requireRef('supplier_sync_id', 'suppliers', 'supplier_id')) return null;
+      if (!await requireRef('employee_sync_id', 'users', 'employee_id')) return null;
+      if (!await requireRef('created_by_sync_id', 'users', 'created_by')) return null;
+      data.remove('tank_sync_id'); data.remove('supplier_sync_id');
+      data.remove('employee_sync_id'); data.remove('created_by_sync_id');
+    } else if (table == 'sales') {
+      if (!await requireRef('client_sync_id', 'clients', 'client_id')) return null;
+      if (!await requireRef('tank_sync_id', 'tanks', 'tank_id')) return null;
+      if (!await requireRef('driver_sync_id', 'drivers', 'driver_id')) return null;
+      if (!await requireRef('supplier_sync_id', 'suppliers', 'supplier_id')) return null;
+      if (!await requireRef('created_by_sync_id', 'users', 'created_by')) return null;
+      data.remove('client_sync_id'); data.remove('tank_sync_id');
+      data.remove('driver_sync_id'); data.remove('supplier_sync_id');
+      data.remove('created_by_sync_id');
+    } else if (table == 'payments') {
+      final type = data['payment_type']?.toString();
+      if (data['reference_sync_id'] != null) {
+        final t = type == 'client_payment' ? 'clients' : type == 'supplier_payment' ? 'suppliers' : null;
+        if (t == null || !await requireRef('reference_sync_id', t, 'reference_id')) return null;
+      }
+      if (!await requireRef('created_by_sync_id', 'users', 'created_by')) return null;
+      data.remove('reference_sync_id'); data.remove('created_by_sync_id');
+    } else if (table == 'salaries') {
+      if (!await requireRef('employee_sync_id', 'users', 'employee_id')) return null;
+      if (!await requireRef('created_by_sync_id', 'users', 'created_by')) return null;
+      data.remove('employee_sync_id'); data.remove('created_by_sync_id');
+    } else if (table == 'purchase_invoices') {
+      if (!await requireRef('supplier_sync_id', 'suppliers', 'supplier_id')) return null;
+      if (!await requireRef('created_by_sync_id', 'users', 'created_by')) return null;
+      data.remove('supplier_sync_id'); data.remove('created_by_sync_id');
+    } else if (table == 'purchase_items') {
+      if (!await requireRef('purchase_invoice_sync_id', 'purchase_invoices', 'purchase_invoice_id')) return null;
+      data.remove('purchase_invoice_sync_id');
+    } else if (table == 'inventory_layers') {
+      if (!await requireRef('purchase_item_sync_id', 'purchase_items', 'purchase_item_id')) return null;
+      data.remove('purchase_item_sync_id');
+    } else if (table == 'sale_inventory_allocations') {
+      if (!await requireRef('sale_sync_id', 'sales', 'sale_id')) return null;
+      if (!await requireRef('inventory_layer_sync_id', 'inventory_layers', 'inventory_layer_id')) return null;
+      if (!await requireRef('purchase_item_sync_id', 'purchase_items', 'purchase_item_id')) return null;
+      if (!await requireRef('supplier_sync_id', 'suppliers', 'supplier_id')) return null;
+      data.remove('sale_sync_id'); data.remove('inventory_layer_sync_id');
+      data.remove('purchase_item_sync_id'); data.remove('supplier_sync_id');
+    } else if (table == 'account_transactions') {
+      final type = data['account_type']?.toString();
+      if (data['reference_sync_id'] != null) {
+        final t = type == 'client' ? 'clients' : type == 'supplier' ? 'suppliers' : null;
+        if (t == null || !await requireRef('reference_sync_id', t, 'reference_id')) return null;
+      }
+      if (!await requireRef('created_by_sync_id', 'users', 'created_by')) return null;
+      data.remove('reference_sync_id'); data.remove('created_by_sync_id');
+    } else if (table == 'expenses') {
+      if (!await requireRef('created_by_sync_id', 'users', 'created_by')) return null;
+      data.remove('created_by_sync_id');
+    }
+    data['sync_id'] = remote['sync_id'];
+    data['is_synced'] = 1;
+    return data;
   }
 
-  Future<void> syncTanks() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
+  Future<void> _downloadTable(String table) async {
+    if (!await _ready()) return;
     final db = await _dbHelper.database;
-    final rows = await db.query(
-      'tanks',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final row in rows) {
-      try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        final driverId = row['driver_id'];
-        data.remove('driver_id');
-
-        if (driverId != null) {
-          final driver = await db.query(
-            'drivers',
-            columns: ['sync_id'],
-            where: 'id = ?',
-            whereArgs: [driverId],
-            limit: 1,
-          );
-          data['driver_sync_id'] =
-              driver.isNotEmpty ? driver.first['sync_id'] : null;
-        } else {
-          data['driver_sync_id'] = null;
-        }
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('tanks')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'tanks',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
-      } catch (e) {
-        debugPrint('Tank sync error: $e');
-      }
-    }
-  }
-
-  Future<void> syncFillingOperations() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final rows = await db.query(
-      'filling_operations',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final row in rows) {
-      try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        Future<String?> getSyncId(
-          String table,
-          dynamic localId,
-        ) async {
-          if (localId == null) return null;
-          final result = await db.query(
-            table,
-            columns: ['sync_id'],
-            where: 'id = ?',
-            whereArgs: [localId],
-            limit: 1,
-          );
-          return result.isNotEmpty ? result.first['sync_id']?.toString() : null;
-        }
-
-        data['tank_sync_id'] = await getSyncId('tanks', row['tank_id']);
-        data.remove('tank_id');
-
-        data['supplier_sync_id'] =
-            await getSyncId('suppliers', row['supplier_id']);
-        data.remove('supplier_id');
-
-        data['employee_sync_id'] = await getSyncId('users', row['employee_id']);
-        data.remove('employee_id');
-
-        data['created_by_sync_id'] =
-            await getSyncId('users', row['created_by']);
-        data.remove('created_by');
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('filling_operations')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'filling_operations',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
-      } catch (e) {
-        debugPrint('Filling operation sync error: $e');
-      }
-    }
-  }
-
-  Future<void> syncSales() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final rows = await db.query(
-      'sales',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final row in rows) {
-      try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        Future<String?> getSyncId(
-          String table,
-          dynamic localId,
-        ) async {
-          if (localId == null) return null;
-          final result = await db.query(
-            table,
-            columns: ['sync_id'],
-            where: 'id = ?',
-            whereArgs: [localId],
-            limit: 1,
-          );
-          return result.isNotEmpty ? result.first['sync_id']?.toString() : null;
-        }
-
-        data['client_sync_id'] = await getSyncId('clients', row['client_id']);
-        data.remove('client_id');
-
-        data['tank_sync_id'] = await getSyncId('tanks', row['tank_id']);
-        data.remove('tank_id');
-
-        data['driver_sync_id'] = await getSyncId('drivers', row['driver_id']);
-        data.remove('driver_id');
-
-        data['supplier_sync_id'] =
-            await getSyncId('suppliers', row['supplier_id']);
-        data.remove('supplier_id');
-
-        data['created_by_sync_id'] =
-            await getSyncId('users', row['created_by']);
-        data.remove('created_by');
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('sales')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'sales',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
-      } catch (e) {
-        debugPrint('Sale sync error: $e');
-      }
-    }
-  }
-
-  Future<void> syncPayments() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final rows = await db.query(
-      'payments',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final row in rows) {
-      try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        Future<String?> getSyncId(
-          String table,
-          dynamic localId,
-        ) async {
-          if (localId == null) return null;
-          final result = await db.query(
-            table,
-            columns: ['sync_id'],
-            where: 'id = ?',
-            whereArgs: [localId],
-            limit: 1,
-          );
-          return result.isNotEmpty ? result.first['sync_id']?.toString() : null;
-        }
-
-        final paymentType = row['payment_type']?.toString();
-        final referenceId = row['reference_id'];
-
-        if (paymentType == 'client_payment') {
-          data['reference_sync_id'] = await getSyncId('clients', referenceId);
-        } else if (paymentType == 'supplier_payment') {
-          data['reference_sync_id'] = await getSyncId('suppliers', referenceId);
-        } else {
-          data['reference_sync_id'] = null;
-        }
-
-        data.remove('reference_id');
-
-        data['created_by_sync_id'] =
-            await getSyncId('users', row['created_by']);
-        data.remove('created_by');
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('payments')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'payments',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
-      } catch (e) {
-        debugPrint('Payment sync error: $e');
-      }
-    }
-  }
-
-  Future<void> syncExpenses() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final rows = await db.query(
-      'expenses',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final row in rows) {
-      try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        final createdBy = row['created_by'];
-        data.remove('created_by');
-
-        if (createdBy != null) {
-          final userRows = await db.query(
-            'users',
-            columns: ['sync_id'],
-            where: 'id = ?',
-            whereArgs: [createdBy],
-            limit: 1,
-          );
-
-          if (userRows.isNotEmpty) {
-            data['created_by_sync_id'] = userRows.first['sync_id'];
-          }
-        }
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('expenses')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'expenses',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
-      } catch (e) {
-        debugPrint('Expense sync error: $e');
-      }
-    }
-  }
-
-  Future<void> syncSalaries() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final rows = await db.query(
-      'salaries',
-      where: 'is_synced = ?',
-      whereArgs: [0],
-    );
-
-    for (final row in rows) {
-      try {
-        final syncId = row['sync_id']?.toString();
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final data = Map<String, dynamic>.from(row);
-        data.remove('id');
-        data.remove('is_synced');
-
-        final employeeId = row['employee_id'];
-        data.remove('employee_id');
-        if (employeeId != null) {
-          final employeeRows = await db.query(
-            'users',
-            columns: ['sync_id'],
-            where: 'id = ?',
-            whereArgs: [employeeId],
-            limit: 1,
-          );
-          if (employeeRows.isNotEmpty) {
-            data['employee_sync_id'] = employeeRows.first['sync_id'];
-          }
-        }
-
-        final createdBy = row['created_by'];
-        data.remove('created_by');
-        if (createdBy != null) {
-          final userRows = await db.query(
-            'users',
-            columns: ['sync_id'],
-            where: 'id = ?',
-            whereArgs: [createdBy],
-            limit: 1,
-          );
-          if (userRows.isNotEmpty) {
-            data['created_by_sync_id'] = userRows.first['sync_id'];
-          }
-        }
-
-        await _firestore
-            .collection('businesses')
-            .doc(businessId)
-            .collection('salaries')
-            .doc(syncId)
-            .set(data, SetOptions(merge: true));
-
-        await db.update(
-          'salaries',
-          {'is_synced': 1},
-          where: 'id = ?',
-          whereArgs: [row['id']],
-        );
-      } catch (e) {
-        debugPrint('Salary sync error: $e');
-      }
-    }
-  }
-
-  Future<void> downloadClients() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-
-    final snapshot = await _firestore
-        .collection('businesses')
-        .doc(businessId)
-        .collection('clients')
-        .get();
-
+    final snapshot = await _collection(table).get();
+    final columns = await _columns(db, table);
     for (final doc in snapshot.docs) {
       try {
-        final data = Map<String, dynamic>.from(doc.data());
-        final syncId = data['sync_id']?.toString();
-
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final existing = await db.query(
-          'clients',
-          where: 'sync_id = ?',
-          whereArgs: [syncId],
-          limit: 1,
-        );
-
-        data.remove('id');
-        data.remove('is_synced');
-        data['sync_id'] = syncId;
-        data['is_synced'] = 1;
-
+        final remote = Map<String, dynamic>.from(doc.data());
+        final syncId = remote['sync_id']?.toString() ?? doc.id;
+        if (syncId.isEmpty) continue;
+        remote['sync_id'] = syncId;
+        final existing = await db.query(table, where: 'sync_id = ?', whereArgs: [syncId], limit: 1);
+        if (existing.isNotEmpty && !_remoteIsNewer(existing.first, remote)) continue;
+        if (existing.isEmpty && remote['updated_at'] == null) continue;
+        final data = await _downloadData(db, table, remote);
+        if (data == null) continue;
+        data.removeWhere((key, _) => !columns.contains(key));
         if (existing.isEmpty) {
-          await db.insert('clients', data);
+          await db.insert(table, data, conflictAlgorithm: ConflictAlgorithm.ignore);
         } else {
-          await db.update(
-            'clients',
-            data,
-            where: 'sync_id = ?',
-            whereArgs: [syncId],
-          );
+          await db.update(table, data, where: 'sync_id = ?', whereArgs: [syncId]);
         }
       } catch (e) {
-        debugPrint('Client download error: $e');
+        debugPrint('$table download error: $e');
       }
     }
   }
 
-  Future<void> downloadTable(String tableName) async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-
-    final snapshot = await _firestore
-        .collection('businesses')
-        .doc(businessId)
-        .collection(tableName)
-        .get();
-
-    for (final doc in snapshot.docs) {
-      try {
-        final data = Map<String, dynamic>.from(doc.data());
-        final syncId = data['sync_id']?.toString();
-
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final existing = await db.query(
-          tableName,
-          where: 'sync_id = ?',
-          whereArgs: [syncId],
-          limit: 1,
-        );
-
-        data.remove('id');
-        data.remove('is_synced');
-        data['sync_id'] = syncId;
-        data['is_synced'] = 1;
-
-        if (existing.isEmpty) {
-          await db.insert(tableName, data);
-        } else {
-          await db.update(
-            tableName,
-            data,
-            where: 'sync_id = ?',
-            whereArgs: [syncId],
-          );
-        }
-      } catch (e) {
-        debugPrint('$tableName download error: $e');
-      }
-    }
-  }
-
-  Future<void> downloadTanks() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final snapshot = await _firestore
-        .collection('businesses')
-        .doc(businessId)
-        .collection('tanks')
-        .get();
-
-    for (final doc in snapshot.docs) {
-      try {
-        final data = Map<String, dynamic>.from(doc.data());
-        final syncId = data['sync_id']?.toString();
-
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final driverSyncId = data['driver_sync_id']?.toString();
-        data.remove('driver_sync_id');
-
-        if (driverSyncId != null && driverSyncId.isNotEmpty) {
-          final driverRows = await db.query(
-            'drivers',
-            columns: ['id'],
-            where: 'sync_id = ?',
-            whereArgs: [driverSyncId],
-            limit: 1,
-          );
-
-          if (driverRows.isEmpty) {
-            debugPrint(
-              'Tank download skipped: driver not found for $syncId',
-            );
-            continue;
-          }
-
-          data['driver_id'] = driverRows.first['id'];
-        } else {
-          data['driver_id'] = null;
-        }
-
-        final existing = await db.query(
-          'tanks',
-          where: 'sync_id = ?',
-          whereArgs: [syncId],
-          limit: 1,
-        );
-
-        data.remove('id');
-        data.remove('is_synced');
-        data['sync_id'] = syncId;
-        data['is_synced'] = 1;
-
-        if (existing.isEmpty) {
-          await db.insert('tanks', data);
-        } else {
-          await db.update(
-            'tanks',
-            data,
-            where: 'sync_id = ?',
-            whereArgs: [syncId],
-          );
-        }
-      } catch (e) {
-        debugPrint('Tank download error: $e');
-      }
-    }
-  }
-
-  Future<void> downloadFillingOperations() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final snapshot = await _firestore
-        .collection('businesses')
-        .doc(businessId)
-        .collection('filling_operations')
-        .get();
-
-    Future<int?> getLocalId(String table, dynamic syncId) async {
-      if (syncId == null || syncId.toString().isEmpty) return null;
-
-      final result = await db.query(
-        table,
-        columns: ['id'],
-        where: 'sync_id = ?',
-        whereArgs: [syncId.toString()],
-        limit: 1,
-      );
-
-      return result.isNotEmpty ? result.first['id'] as int? : null;
-    }
-
-    for (final doc in snapshot.docs) {
-      try {
-        final data = Map<String, dynamic>.from(doc.data());
-        final syncId = data['sync_id']?.toString();
-
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final tankSyncId = data['tank_sync_id'];
-        final supplierSyncId = data['supplier_sync_id'];
-        final employeeSyncId = data['employee_sync_id'];
-        final createdBySyncId = data['created_by_sync_id'];
-
-        data.remove('tank_sync_id');
-        data.remove('supplier_sync_id');
-        data.remove('employee_sync_id');
-        data.remove('created_by_sync_id');
-
-        final tankId = await getLocalId('tanks', tankSyncId);
-        final supplierId = await getLocalId('suppliers', supplierSyncId);
-        final employeeId = await getLocalId('users', employeeSyncId);
-        final createdById = await getLocalId('users', createdBySyncId);
-
-        if (tankSyncId != null && tankId == null) continue;
-        if (supplierSyncId != null && supplierId == null) continue;
-        if (employeeSyncId != null && employeeId == null) continue;
-        if (createdBySyncId != null && createdById == null) continue;
-
-        data['tank_id'] = tankId;
-        data['supplier_id'] = supplierId;
-        data['employee_id'] = employeeId;
-        data['created_by'] = createdById;
-
-        final existing = await db.query(
-          'filling_operations',
-          where: 'sync_id = ?',
-          whereArgs: [syncId],
-          limit: 1,
-        );
-
-        data.remove('id');
-        data.remove('is_synced');
-        data['sync_id'] = syncId;
-        data['is_synced'] = 1;
-
-        if (existing.isEmpty) {
-          await db.insert('filling_operations', data);
-        } else {
-          await db.update(
-            'filling_operations',
-            data,
-            where: 'sync_id = ?',
-            whereArgs: [syncId],
-          );
-        }
-      } catch (e) {
-        debugPrint('Filling operation download error: $e');
-      }
-    }
-  }
-
-  Future<void> downloadSales() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final snapshot = await _firestore
-        .collection('businesses')
-        .doc(businessId)
-        .collection('sales')
-        .get();
-
-    Future<int?> getLocalId(String table, dynamic syncId) async {
-      if (syncId == null || syncId.toString().isEmpty) return null;
-
-      final result = await db.query(
-        table,
-        columns: ['id'],
-        where: 'sync_id = ?',
-        whereArgs: [syncId.toString()],
-        limit: 1,
-      );
-
-      return result.isNotEmpty ? result.first['id'] as int? : null;
-    }
-
-    for (final doc in snapshot.docs) {
-      try {
-        final data = Map<String, dynamic>.from(doc.data());
-        final syncId = data['sync_id']?.toString();
-
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final clientSyncId = data['client_sync_id'];
-        final tankSyncId = data['tank_sync_id'];
-        final driverSyncId = data['driver_sync_id'];
-        final supplierSyncId = data['supplier_sync_id'];
-        final createdBySyncId = data['created_by_sync_id'];
-
-        data.remove('client_sync_id');
-        data.remove('tank_sync_id');
-        data.remove('driver_sync_id');
-        data.remove('supplier_sync_id');
-        data.remove('created_by_sync_id');
-
-        final clientId = await getLocalId('clients', clientSyncId);
-        final tankId = await getLocalId('tanks', tankSyncId);
-        final driverId = await getLocalId('drivers', driverSyncId);
-        final supplierId = await getLocalId('suppliers', supplierSyncId);
-        final createdById = await getLocalId('users', createdBySyncId);
-
-        if (clientSyncId != null && clientId == null) continue;
-        if (tankSyncId != null && tankId == null) continue;
-        if (driverSyncId != null && driverId == null) continue;
-        if (supplierSyncId != null && supplierId == null) continue;
-        if (createdBySyncId != null && createdById == null) continue;
-
-        data['client_id'] = clientId;
-        data['tank_id'] = tankId;
-        data['driver_id'] = driverId;
-        data['supplier_id'] = supplierId;
-        data['created_by'] = createdById;
-
-        final existing = await db.query(
-          'sales',
-          where: 'sync_id = ?',
-          whereArgs: [syncId],
-          limit: 1,
-        );
-
-        data.remove('id');
-        data.remove('is_synced');
-        data['sync_id'] = syncId;
-        data['is_synced'] = 1;
-
-        if (existing.isEmpty) {
-          await db.insert('sales', data);
-        } else {
-          await db.update(
-            'sales',
-            data,
-            where: 'sync_id = ?',
-            whereArgs: [syncId],
-          );
-        }
-      } catch (e) {
-        debugPrint('Sale download error: $e');
-      }
-    }
-  }
-
-  Future<void> downloadPayments() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final snapshot = await _firestore
-        .collection('businesses')
-        .doc(businessId)
-        .collection('payments')
-        .get();
-
-    Future<int?> getLocalId(String table, dynamic syncId) async {
-      if (syncId == null || syncId.toString().isEmpty) return null;
-
-      final result = await db.query(
-        table,
-        columns: ['id'],
-        where: 'sync_id = ?',
-        whereArgs: [syncId.toString()],
-        limit: 1,
-      );
-
-      return result.isNotEmpty ? result.first['id'] as int? : null;
-    }
-
-    for (final doc in snapshot.docs) {
-      try {
-        final data = Map<String, dynamic>.from(doc.data());
-        final syncId = data['sync_id']?.toString();
-
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final paymentType = data['payment_type']?.toString();
-        final referenceSyncId = data['reference_sync_id'];
-        final createdBySyncId = data['created_by_sync_id'];
-
-        data.remove('reference_sync_id');
-        data.remove('created_by_sync_id');
-
-        int? referenceId;
-
-        if (paymentType == 'client_payment') {
-          referenceId = await getLocalId('clients', referenceSyncId);
-        } else if (paymentType == 'supplier_payment') {
-          referenceId = await getLocalId('suppliers', referenceSyncId);
-        }
-
-        final createdById = await getLocalId('users', createdBySyncId);
-
-        if (referenceSyncId != null && referenceId == null) continue;
-        if (createdBySyncId != null && createdById == null) continue;
-
-        data['reference_id'] = referenceId;
-        data['created_by'] = createdById;
-
-        final existing = await db.query(
-          'payments',
-          where: 'sync_id = ?',
-          whereArgs: [syncId],
-          limit: 1,
-        );
-
-        data.remove('id');
-        data.remove('is_synced');
-        data['sync_id'] = syncId;
-        data['is_synced'] = 1;
-
-        if (existing.isEmpty) {
-          await db.insert('payments', data);
-        } else {
-          await db.update(
-            'payments',
-            data,
-            where: 'sync_id = ?',
-            whereArgs: [syncId],
-          );
-        }
-      } catch (e) {
-        debugPrint('Payment download error: $e');
-      }
-    }
-  }
-
-  Future<void> downloadSalaries() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final snapshot = await _firestore
-        .collection('businesses')
-        .doc(businessId)
-        .collection('salaries')
-        .get();
-
-    Future<int?> getLocalId(String table, dynamic syncId) async {
-      if (syncId == null || syncId.toString().isEmpty) return null;
-
-      final result = await db.query(
-        table,
-        columns: ['id'],
-        where: 'sync_id = ?',
-        whereArgs: [syncId.toString()],
-        limit: 1,
-      );
-
-      return result.isNotEmpty ? result.first['id'] as int? : null;
-    }
-
-    for (final doc in snapshot.docs) {
-      try {
-        final data = Map<String, dynamic>.from(doc.data());
-        final syncId = data['sync_id']?.toString();
-
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final employeeSyncId = data['employee_sync_id'];
-        final createdBySyncId = data['created_by_sync_id'];
-
-        data.remove('employee_sync_id');
-        data.remove('created_by_sync_id');
-
-        final employeeId = await getLocalId('users', employeeSyncId);
-        final createdById = await getLocalId('users', createdBySyncId);
-
-        if (employeeSyncId != null && employeeId == null) continue;
-        if (createdBySyncId != null && createdById == null) continue;
-
-        data['employee_id'] = employeeId;
-        data['created_by'] = createdById;
-
-        final existing = await db.query(
-          'salaries',
-          where: 'sync_id = ?',
-          whereArgs: [syncId],
-          limit: 1,
-        );
-
-        data.remove('id');
-        data.remove('is_synced');
-        data['sync_id'] = syncId;
-        data['is_synced'] = 1;
-
-        if (existing.isEmpty) {
-          await db.insert('salaries', data);
-        } else {
-          await db.update(
-            'salaries',
-            data,
-            where: 'sync_id = ?',
-            whereArgs: [syncId],
-          );
-        }
-      } catch (e) {
-        debugPrint('Salary download error: $e');
-      }
-    }
-  }
-
-  Future<void> downloadExpenses() async {
-    if (!await _connectivity.isOnline()) return;
-    if (_auth.currentUser == null) return;
-
-    final db = await _dbHelper.database;
-    final snapshot = await _firestore
-        .collection('businesses')
-        .doc(businessId)
-        .collection('expenses')
-        .get();
-
-    Future<int?> getLocalId(dynamic syncId) async {
-      if (syncId == null || syncId.toString().isEmpty) return null;
-
-      final result = await db.query(
-        'users',
-        columns: ['id'],
-        where: 'sync_id = ?',
-        whereArgs: [syncId.toString()],
-        limit: 1,
-      );
-
-      return result.isNotEmpty ? result.first['id'] as int? : null;
-    }
-
-    for (final doc in snapshot.docs) {
-      try {
-        final data = Map<String, dynamic>.from(doc.data());
-        final syncId = data['sync_id']?.toString();
-
-        if (syncId == null || syncId.isEmpty) continue;
-
-        final createdBySyncId = data['created_by_sync_id'];
-
-        data.remove('created_by_sync_id');
-
-        final createdById = await getLocalId(createdBySyncId);
-
-        if (createdBySyncId != null && createdById == null) continue;
-
-        data['created_by'] = createdById;
-        data.remove('id');
-        data.remove('is_synced');
-        data['sync_id'] = syncId;
-        data['is_synced'] = 1;
-
-        final existing = await db.query(
-          'expenses',
-          where: 'sync_id = ?',
-          whereArgs: [syncId],
-          limit: 1,
-        );
-
-        if (existing.isEmpty) {
-          await db.insert('expenses', data);
-        } else {
-          await db.update(
-            'expenses',
-            data,
-            where: 'sync_id = ?',
-            whereArgs: [syncId],
-          );
-        }
-      } catch (e) {
-        debugPrint('Expense download error: $e');
-      }
-    }
-  }
+  Future<void> syncClients() => _uploadTable('clients');
+  Future<void> syncSuppliers() => _uploadTable('suppliers');
+  Future<void> syncDrivers() => _uploadTable('drivers');
+  Future<void> syncTanks() => _uploadTable('tanks');
+  Future<void> syncFillingOperations() => _uploadTable('filling_operations');
+  Future<void> syncSales() => _uploadTable('sales');
+  Future<void> syncPayments() => _uploadTable('payments');
+  Future<void> syncExpenses() => _uploadTable('expenses');
+  Future<void> syncSalaries() => _uploadTable('salaries');
+
+  Future<void> downloadClients() => _downloadTable('clients');
+  Future<void> downloadTanks() => _downloadTable('tanks');
+  Future<void> downloadFillingOperations() => _downloadTable('filling_operations');
+  Future<void> downloadSales() => _downloadTable('sales');
+  Future<void> downloadPayments() => _downloadTable('payments');
+  Future<void> downloadExpenses() => _downloadTable('expenses');
+  Future<void> downloadSalaries() => _downloadTable('salaries');
+  Future<void> downloadTable(String tableName) => _downloadTable(tableName);
 
   Future<void> syncAll() async {
-    await syncClients();
-    await syncSuppliers();
-    await syncDrivers();
-    await syncTanks();
-    await syncFillingOperations();
-    await syncSales();
-    await syncPayments();
-    await syncExpenses();
-    await syncSalaries();
-    await downloadClients();
-    await downloadTable('suppliers');
-    await downloadTable('drivers');
-    await downloadTanks();
-    await downloadFillingOperations();
-    await downloadSales();
-    await downloadPayments();
-    await downloadExpenses();
-    await downloadSalaries();
+    if (!await _ready()) return;
+    final db = await _dbHelper.database;
+    try { await db.execute('PRAGMA foreign_keys = ON'); } catch (_) {}
+
+    const uploadOrder = [
+      'suppliers', 'clients', 'drivers', 'tanks',
+      'purchase_invoices', 'purchase_items', 'inventory_layers',
+      'sales', 'sale_inventory_allocations', 'account_transactions',
+      'payments', 'expenses', 'salaries', 'filling_operations',
+    ];
+    const downloadOrder = uploadOrder;
+
+    for (final table in uploadOrder) await _uploadTable(table);
+    for (final table in downloadOrder) await _downloadTable(table);
   }
 }

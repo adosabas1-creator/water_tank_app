@@ -1,15 +1,11 @@
 import 'package:sqflite/sqflite.dart';
 
 /// Idempotent financial schema migration.
-///
-/// New invoice links remain nullable so existing financial records are kept
-/// intact. New invoice-specific payments should populate the invoice link.
+/// New invoice links remain nullable so existing financial records are kept intact.
 class FinancialMigration {
   static const int schemaRevision = 22;
 
   static Future<void> migrate(Database db) async {
-    // Must run outside the transaction; SQLite does not change this pragma
-    // while a transaction is active.
     await db.execute('PRAGMA foreign_keys = ON');
 
     await db.transaction((txn) async {
@@ -17,7 +13,6 @@ class FinancialMigration {
       await _addColumnIfMissing(txn, 'payments', 'payment_key', 'TEXT');
       await _addColumnIfMissing(txn, 'account_transactions', 'purchase_invoice_id', 'INTEGER');
 
-      // Preserve every legacy payment and give it a deterministic unique key.
       await txn.execute('''
         UPDATE payments
         SET payment_key = 'legacy_payment_' || id
@@ -44,18 +39,15 @@ class FinancialMigration {
         ON account_transactions(purchase_invoice_id, is_deleted)
       ''');
 
-      // Only one active purchase-debt entry may represent an invoice.
       await txn.execute('''
         CREATE UNIQUE INDEX IF NOT EXISTS ux_account_purchase_debt_invoice
         ON account_transactions(purchase_invoice_id)
         WHERE purchase_invoice_id IS NOT NULL
           AND is_deleted = 0
           AND account_type = 'supplier'
-          AND transaction_type = 'purchase_debt'
+          AND transaction_type = 'debt'
       ''');
 
-      // Invoice-specific supplier payments must belong to the same supplier
-      // and may never make cumulative payments exceed the invoice total.
       await txn.execute('''
         CREATE TRIGGER IF NOT EXISTS trg_payment_invoice_guard_insert
         BEFORE INSERT ON payments
@@ -79,8 +71,7 @@ class FinancialMigration {
               WHERE p.purchase_invoice_id = NEW.purchase_invoice_id
                 AND p.is_deleted = 0
             ) + NEW.amount > (
-              SELECT pi.total_amount
-              FROM purchase_invoices pi
+              SELECT pi.total_amount FROM purchase_invoices pi
               WHERE pi.id = NEW.purchase_invoice_id
             ) + 0.000001
               THEN RAISE(ABORT, 'إجمالي دفعات الفاتورة يتجاوز قيمة الفاتورة')
@@ -113,8 +104,7 @@ class FinancialMigration {
                 AND p.is_deleted = 0
                 AND p.id <> NEW.id
             ) + NEW.amount > (
-              SELECT pi.total_amount
-              FROM purchase_invoices pi
+              SELECT pi.total_amount FROM purchase_invoices pi
               WHERE pi.id = NEW.purchase_invoice_id
             ) + 0.000001
               THEN RAISE(ABORT, 'إجمالي دفعات الفاتورة يتجاوز قيمة الفاتورة')

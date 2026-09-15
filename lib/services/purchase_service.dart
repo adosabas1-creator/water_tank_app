@@ -38,6 +38,13 @@ class PurchaseService {
     if (item.totalAmount < 0) {
       throw ArgumentError('إجمالي صنف الشراء غير صالح.');
     }
+    final expectedItemTotal = item.units * item.purchasePrice;
+    if ((item.totalAmount - expectedItemTotal).abs() > 0.01) {
+      throw ArgumentError('إجمالي صنف الشراء لا يطابق الكمية × سعر الشراء.');
+    }
+    if ((invoice.totalAmount - item.totalAmount).abs() > 0.01) {
+      throw ArgumentError('إجمالي الفاتورة لا يطابق إجمالي صنف الشراء.');
+    }
 
     return await db.transaction((txn) async {
       final invoiceId = await txn.insert(

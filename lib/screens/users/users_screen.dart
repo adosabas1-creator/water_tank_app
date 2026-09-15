@@ -571,8 +571,8 @@ class _UsersScreenState extends State<UsersScreen> {
           return AlertDialog(
             title: const Text('رمز الاسترداد'),
             content: SelectableText(
-              'المستخدم: ${user.fullName}\\n\\n'
-              'رمز الاسترداد:\\n$code\\n\\n'
+              'المستخدم: ${user.fullName}\n\n'
+              'رمز الاسترداد:\n$code\n\n'
               'احفظ هذا الرمز في مكان آمن وأعطه للمستخدم. '
               'لن يتم عرض الرمز مرة أخرى بعد إغلاق هذه النافذة.',
               textAlign: TextAlign.center,

@@ -35,9 +35,34 @@ class AuthService {
   }
 
   Future<void> sendPasswordResetEmail(String email) async {
-    await _firebaseAuth.sendPasswordResetEmail(
-      email: email.trim(),
-    );
+    final cleanEmail = email.trim();
+
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+      throw ArgumentError('أدخل بريدًا إلكترونيًا صحيحًا');
+    }
+
+    try {
+      await _firebaseAuth.sendPasswordResetEmail(
+        email: cleanEmail,
+      );
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'user-not-found':
+          throw StateError('هذا البريد غير مسجل في Firebase');
+        case 'invalid-email':
+          throw StateError('صيغة البريد الإلكتروني غير صحيحة');
+        case 'operation-not-allowed':
+          throw StateError('استعادة كلمة المرور عبر البريد غير مفعلة في Firebase');
+        case 'network-request-failed':
+          throw StateError('تعذر الاتصال بخدمة Firebase. تحقق من الإنترنت');
+        case 'too-many-requests':
+          throw StateError('تمت محاولات كثيرة. حاول مرة أخرى لاحقًا');
+        default:
+          throw StateError(
+            'تعذر إرسال رابط الاستعادة. رمز Firebase: ${e.code}',
+          );
+      }
+    }
   }
 
   final DatabaseHelper _dbHelper = DatabaseHelper();

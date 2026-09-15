@@ -1,0 +1,42 @@
+name: Apply service authorization
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-service-auth.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard sale mutations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/services/sale_service.dart')
+          s = p.read_text()
+          if "../core/auth/permission_service.dart" not in s:
+              s = s.replace("import '../core/database/database_helper.dart';", "import '../core/auth/permission_service.dart';\nimport '../core/constants/permissions.dart';\nimport '../core/database/database_helper.dart';", 1)
+          s = s.replace("  Future<Sale> addSale(Sale sale) async {\n", "  Future<Sale> addSale(Sale sale) async {\n    PermissionService.requirePermission(PermissionKeys.salesAdd);\n", 1)
+          s = s.replace("  Future<void> updateSale(Sale sale) async {\n", "  Future<void> updateSale(Sale sale) async {\n    PermissionService.requirePermission(PermissionKeys.salesEdit);\n", 1)
+          marker = "  Future<List<Map<String, dynamic>>> getSupplierSalesShareReport() async {"
+          if "Future<void> deleteSale" in s:
+              s = s.replace("  Future<void> deleteSale(int id) async {\n", "  Future<void> deleteSale(int id) async {\n    PermissionService.requirePermission(PermissionKeys.salesDelete);\n", 1)
+          p.write_text(s)
+          PY
+      - name: Commit hardened service
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/services/sale_service.dart
+          git diff --cached --quiet || git commit -m 'Enforce sale permissions in service layer'
+          git push
+      - name: Remove one-shot workflow
+        run: |
+          git rm .github/workflows/apply-service-auth.yml
+          git commit -m 'Remove one-shot authorization workflow'
+          git push

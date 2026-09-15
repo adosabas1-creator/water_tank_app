@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../database/database_helper.dart';
 import '../../models/user.dart';
 import '../constants/permissions.dart';
+import 'permission_service.dart';
 
 class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
@@ -110,6 +111,7 @@ class AuthService {
     int? driverId,
     Map<String, bool>? permissions,
   }) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
     final cleanUsername = username.trim();
     final cleanFullName = fullName.trim();
     final cleanEmail = firebaseEmail?.trim();
@@ -164,6 +166,7 @@ class AuthService {
     required String fullName,
     required String role,
   }) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
     final cleanUsername = username.trim();
     final cleanFullName = fullName.trim();
     if (cleanUsername.isEmpty) throw ArgumentError('اسم المستخدم مطلوب');
@@ -198,6 +201,7 @@ class AuthService {
   }
 
   Future<void> updateDriver(int userId, int? driverId) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
     final db = await _dbHelper.database;
     await db.update(
       'users',
@@ -212,6 +216,7 @@ class AuthService {
   }
 
   Future<void> updatePermissions(int userId, Map<String, bool> newPermissions) async {
+    PermissionService.requirePermission(PermissionKeys.permissionsManage);
     final db = await _dbHelper.database;
     await db.update(
       'users',
@@ -254,6 +259,7 @@ class AuthService {
   }
 
   Future<int> removeDefaultUsers() async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
     final db = await _dbHelper.database;
     return db.update(
       'users',
@@ -271,6 +277,7 @@ class AuthService {
     required int userId,
     required String recoveryCode,
   }) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
     final code = recoveryCode.trim();
     if (code.length < 6) {
       throw ArgumentError('رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');

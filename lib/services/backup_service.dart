@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/auth/permission_service.dart';
 import '../core/constants/app_constants.dart';
 import '../core/database/database_helper.dart';
 
@@ -12,6 +13,7 @@ class BackupService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
   Future<String?> createManualBackup() async {
+    PermissionService.requireManagementRole();
     final directory = await FilePicker.getDirectoryPath(
       dialogTitle: 'اختيار مكان حفظ النسخة الاحتياطية',
     );
@@ -39,6 +41,7 @@ class BackupService {
   }
 
   Future<bool> restoreBackup() async {
+    PermissionService.requireAdmin();
     final result = await FilePicker.pickFile(
       dialogTitle: 'اختيار النسخة الاحتياطية',
       type: FileType.any,

@@ -1,3 +1,4 @@
+import '../core/auth/permission_service.dart';
 import '../core/database/database_helper.dart';
 import '../models/operation_log.dart';
 
@@ -16,6 +17,7 @@ class OperationLogService {
   }
 
   Future<void> deleteLog(int id) async {
+    PermissionService.requireAdmin();
     final db = await _dbHelper.database;
     await db.delete('operation_logs', where: 'id = ?', whereArgs: [id]);
   }

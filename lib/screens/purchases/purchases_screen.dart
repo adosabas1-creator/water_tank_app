@@ -19,13 +19,10 @@ class PurchasesScreen extends StatefulWidget {
 class _PurchasesScreenState extends State<PurchasesScreen> {
   final SupplierService _supplierService = SupplierService();
   final PurchaseService _purchaseService = PurchaseService();
-
-  final TextEditingController _quantityController =
-      TextEditingController();
-  final TextEditingController _priceController =
-      TextEditingController();
-  final TextEditingController _notesController =
-      TextEditingController();
+  final TextEditingController _quantityController = TextEditingController();
+  final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _paidController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
 
   List<Supplier> _suppliers = [];
   int? _selectedSupplierId;
@@ -34,62 +31,51 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
   bool _loading = true;
   bool _saving = false;
 
-  int get _quantity {
-    return int.tryParse(_quantityController.text.trim()) ?? 0;
+  int get _quantity => int.tryParse(_quantityController.text.trim()) ?? 0;
+  double get _unitPrice => double.tryParse(_priceController.text.trim()) ?? 0;
+  double get _total => _quantity * _unitPrice;
+  double get _paidAmount {
+    if (_paymentStatus == 'paid') return _total;
+    if (_paymentStatus == 'unpaid') return 0;
+    return double.tryParse(_paidController.text.trim()) ?? 0;
   }
-
-  double get _unitPrice {
-    return double.tryParse(_priceController.text.trim()) ?? 0;
-  }
-
-  double get _total {
-    return _quantity * _unitPrice;
-  }
+  double get _remaining => (_total - _paidAmount).clamp(0, double.infinity).toDouble();
 
   @override
   void initState() {
     super.initState();
     _loadSuppliers();
-
     _quantityController.addListener(_refreshTotal);
     _priceController.addListener(_refreshTotal);
+    _paidController.addListener(_refreshTotal);
   }
 
   @override
   void dispose() {
     _quantityController.dispose();
     _priceController.dispose();
+    _paidController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
   void _refreshTotal() {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadSuppliers() async {
     try {
       final suppliers = await _supplierService.getAllSuppliers();
-
       if (!mounted) return;
-
       setState(() {
         _suppliers = suppliers;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
-
-      setState(() {
-        _loading = false;
-      });
-
+      setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('تعذر تحميل الموردين: $e'),
-        ),
+        SnackBar(content: Text('تعذر تحميل الموردين: $e')),
       );
     }
   }
@@ -102,12 +88,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
       lastDate: DateTime(2100),
       helpText: 'اختر تاريخ الشراء',
     );
-
-    if (selected != null) {
-      setState(() {
-        _purchaseDate = selected;
-      });
-    }
+    if (selected != null) setState(() => _purchaseDate = selected);
   }
 
   String _formatDate(DateTime date) {
@@ -118,101 +99,90 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
 
   Future<void> _savePurchase() async {
     final user = context.read<UserProvider>().currentUser;
-
     if (user == null || user.id == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يجب تسجيل الدخول أولًا'),
-        ),
+        const SnackBar(content: Text('يجب تسجيل الدخول أولًا')),
       );
       return;
     }
-
     if (_selectedSupplierId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('اختر المورد أولًا'),
-        ),
+        const SnackBar(content: Text('اختر المورد أولًا')),
       );
       return;
     }
-
     if (_quantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('أدخل كمية صحيحة'),
-        ),
+        const SnackBar(content: Text('أدخل كمية صحيحة')),
       );
       return;
     }
-
     if (_unitPrice <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('أدخل سعر شراء صحيح'),
-        ),
+        const SnackBar(content: Text('أدخل سعر شراء صحيح')),
+      );
+      return;
+    }
+    if (_total <= 0) return;
+
+    final paid = _paidAmount;
+    if (_paymentStatus == 'partial' && (paid <= 0 || paid >= _total)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('في السداد الجزئي يجب أن يكون المدفوع أكبر من صفر وأقل من الإجمالي.')),
+      );
+      return;
+    }
+    if (paid < 0 || paid > _total) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('المبلغ المدفوع غير صالح.')),
       );
       return;
     }
 
     final now = DateTime.now();
-    const invoicePrefix = 'PUR';
-    const uuid = Uuid();
     final invoiceNumber =
-        '$invoicePrefix-${now.year}${now.month.toString().padLeft(2, '0')}'
-        '${now.day.toString().padLeft(2, '0')}-${now.millisecondsSinceEpoch}';
-    final total = _total;
-
-
+        'PUR-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.microsecondsSinceEpoch}';
     final invoice = PurchaseInvoice(
       invoiceNumber: invoiceNumber,
       supplierId: _selectedSupplierId!,
       purchaseDate: _purchaseDate,
-      totalAmount: total,
+      totalAmount: _total,
       paymentStatus: _paymentStatus,
-      notes: _notesController.text.trim().isEmpty
-          ? null
-          : _notesController.text.trim(),
+      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
       createdBy: user.id!,
       createdAt: now,
       updatedAt: now,
       syncId: 'purchase_$invoiceNumber',
     );
-
     final item = PurchaseItem(
       purchaseInvoiceId: 0,
       itemType: 'tank',
-      units: _quantity.toInt(),
+      units: _quantity,
       purchasePrice: _unitPrice,
-      totalAmount: total,
+      totalAmount: _total,
       createdAt: now,
       updatedAt: now,
-      syncId: 'purchase_item_${uuid.v4()}',
+      syncId: 'purchase_item_${const Uuid().v4()}',
     );
 
-    setState(() {
-      _saving = true;
-    });
-
+    setState(() => _saving = true);
     try {
       await _purchaseService.addPurchase(
         invoice: invoice,
         item: item,
+        paidAmount: paid,
       );
-
       if (!mounted) return;
-
       _quantityController.clear();
       _priceController.clear();
+      _paidController.clear();
       _notesController.clear();
-
       setState(() {
         _saving = false;
         _selectedSupplierId = null;
         _paymentStatus = 'paid';
         _purchaseDate = DateTime.now();
       });
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('تم حفظ فاتورة الشراء بنجاح'),
@@ -221,16 +191,9 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-
-      setState(() {
-        _saving = false;
-      });
-
+      setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('تعذر حفظ فاتورة الشراء: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('تعذر حفظ فاتورة الشراء: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -238,14 +201,9 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('فاتورة شراء'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('فاتورة شراء'), centerTitle: true),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -258,26 +216,16 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.business),
                     ),
-                    items: _suppliers
-                        .map(
-                          (supplier) => DropdownMenuItem<int>(
-                            value: supplier.id,
-                            child: Text(supplier.name),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedSupplierId = value;
-                      });
-                    },
+                    items: _suppliers.map((supplier) => DropdownMenuItem<int>(
+                      value: supplier.id,
+                      child: Text(supplier.name),
+                    )).toList(),
+                    onChanged: (value) => setState(() => _selectedSupplierId = value),
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _quantityController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: false,
-                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: false),
                     decoration: const InputDecoration(
                       labelText: 'الكمية',
                       border: OutlineInputBorder(),
@@ -287,9 +235,7 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: _priceController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
                       labelText: 'سعر الشراء للوحدة',
                       border: OutlineInputBorder(),
@@ -303,20 +249,8 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'الإجمالي',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '${_total.toStringAsFixed(2)} ريال',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          const Text('الإجمالي', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text('${_total.toStringAsFixed(2)} ريال', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -330,23 +264,51 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                       prefixIcon: Icon(Icons.payments),
                     ),
                     items: const [
-                      DropdownMenuItem(
-                        value: 'paid',
-                        child: Text('نقدي'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'unpaid',
-                        child: Text('آجل'),
-                      ),
+                      DropdownMenuItem(value: 'paid', child: Text('نقدي — مدفوع كاملًا')),
+                      DropdownMenuItem(value: 'partial', child: Text('جزئي — مدفوع جزء من الفاتورة')),
+                      DropdownMenuItem(value: 'unpaid', child: Text('آجل — غير مدفوع')),
                     ],
                     onChanged: (value) {
                       if (value == null) return;
-
                       setState(() {
                         _paymentStatus = value;
+                        if (value != 'partial') _paidController.clear();
                       });
                     },
                   ),
+                  if (_paymentStatus == 'partial') ...[
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _paidController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'المبلغ المدفوع الآن *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.payments_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('المتبقي على المورد', style: TextStyle(fontWeight: FontWeight.bold)),
+                            Text('${_remaining.toStringAsFixed(2)} ريال', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (_paymentStatus == 'paid') ...[
+                    const SizedBox(height: 10),
+                    const Text('سيتم تسجيل دفعة كاملة بقيمة الفاتورة تلقائيًا.'),
+                  ],
+                  if (_paymentStatus == 'unpaid') ...[
+                    const SizedBox(height: 10),
+                    const Text('لن تُسجل دفعة الآن، وتصبح قيمة الفاتورة مديونية على المورد.'),
+                  ],
                   const SizedBox(height: 16),
                   InkWell(
                     onTap: _selectDate,
@@ -375,17 +337,9 @@ class _PurchasesScreenState extends State<PurchasesScreen> {
                     child: ElevatedButton.icon(
                       onPressed: _saving ? null : _savePurchase,
                       icon: _saving
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                              ),
-                            )
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.save),
-                      label: Text(
-                        _saving ? 'جاري الحفظ...' : 'حفظ فاتورة الشراء',
-                      ),
+                      label: Text(_saving ? 'جاري الحفظ...' : 'حفظ فاتورة الشراء'),
                     ),
                   ),
                 ],

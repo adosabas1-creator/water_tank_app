@@ -2,6 +2,7 @@ class AccountTransaction {
   final int? id;
   final String accountType; // client أو supplier
   final int referenceId;
+  final int? purchaseInvoiceId;
   final double amount;
   final String transactionType; // opening_balance أو debt أو adjustment
   final String transactionDate;
@@ -17,6 +18,7 @@ class AccountTransaction {
     this.id,
     required this.accountType,
     required this.referenceId,
+    this.purchaseInvoiceId,
     required this.amount,
     required this.transactionType,
     required this.transactionDate,
@@ -34,6 +36,7 @@ class AccountTransaction {
       'id': id,
       'account_type': accountType,
       'reference_id': referenceId,
+      'purchase_invoice_id': purchaseInvoiceId,
       'amount': amount,
       'transaction_type': transactionType,
       'transaction_date': transactionDate,
@@ -51,16 +54,17 @@ class AccountTransaction {
     return AccountTransaction(
       id: map['id'] as int?,
       accountType: map['account_type'] as String,
-      referenceId: map['reference_id'] as int,
+      referenceId: (map['reference_id'] as num).toInt(),
+      purchaseInvoiceId: (map['purchase_invoice_id'] as num?)?.toInt(),
       amount: (map['amount'] as num).toDouble(),
       transactionType: map['transaction_type'] as String,
       transactionDate: map['transaction_date'] as String,
       notes: map['notes'] as String?,
-      createdBy: map['created_by'] as int,
+      createdBy: (map['created_by'] as num).toInt(),
       createdAt: map['created_at'] as String,
       updatedAt: map['updated_at'] as String,
-      isDeleted: (map['is_deleted'] as int? ?? 0) == 1,
-      isSynced: (map['is_synced'] as int? ?? 0) == 1,
+      isDeleted: (map['is_deleted'] as num? ?? 0).toInt() == 1,
+      isSynced: (map['is_synced'] as num? ?? 0).toInt() == 1,
       syncId: map['sync_id'] as String,
     );
   }
@@ -69,6 +73,7 @@ class AccountTransaction {
     int? id,
     String? accountType,
     int? referenceId,
+    int? purchaseInvoiceId,
     double? amount,
     String? transactionType,
     String? transactionDate,
@@ -84,6 +89,7 @@ class AccountTransaction {
       id: id ?? this.id,
       accountType: accountType ?? this.accountType,
       referenceId: referenceId ?? this.referenceId,
+      purchaseInvoiceId: purchaseInvoiceId ?? this.purchaseInvoiceId,
       amount: amount ?? this.amount,
       transactionType: transactionType ?? this.transactionType,
       transactionDate: transactionDate ?? this.transactionDate,

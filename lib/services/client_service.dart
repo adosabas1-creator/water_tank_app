@@ -1,3 +1,5 @@
+import '../core/auth/permission_service.dart';
+import '../core/constants/permissions.dart';
 import '../core/database/database_helper.dart';
 import '../models/client.dart';
 
@@ -5,6 +7,7 @@ class ClientService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
   Future<int> addClient(Client client) async {
+    PermissionService.requirePermission(PermissionKeys.clientsAdd);
     final db = await _dbHelper.database;
     return await db.insert('clients', client.toMap());
   }
@@ -23,22 +26,20 @@ class ClientService {
   }
 
   Future<void> updateClient(Client client) async {
+    PermissionService.requirePermission(PermissionKeys.clientsEdit);
     final db = await _dbHelper.database;
     final data = client.toMap();
     data['is_synced'] = 0;
-    await db.update('clients', data, where: 'id = ?', whereArgs: [client.id]);
+    await db.update('clients', data, where: 'id = ? AND is_deleted = 0', whereArgs: [client.id]);
   }
 
   Future<void> deleteClient(int id) async {
+    PermissionService.requirePermission(PermissionKeys.clientsDelete);
     final db = await _dbHelper.database;
     await db.update(
       'clients',
-      {
-        'is_deleted': 1,
-        'is_synced': 0,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
+      {'is_deleted': 1, 'is_synced': 0, 'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ? AND is_deleted = 0',
       whereArgs: [id],
     );
   }

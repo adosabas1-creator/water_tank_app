@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'core/auth/user_provider.dart';
 import 'screens/login/login_screen.dart';
 import 'core/database/seed.dart';
+import 'core/database/financial_migration.dart';
+import 'core/database/database_helper.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/clients/clients_screen.dart';
 import 'screens/suppliers/suppliers_screen.dart';
@@ -88,6 +90,8 @@ class MyApp extends StatelessWidget {
 Future<void> _initializeDatabase() async {
   try {
     await seedAdminUser();
+    final db = await DatabaseHelper().database;
+    await FinancialMigration.migrate(db);
     debugPrint('Local database initialized successfully');
   } catch (e, stackTrace) {
     debugPrint('Local database initialization failed: $e');

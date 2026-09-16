@@ -96,13 +96,11 @@ void main() {
     await helper.closeDatabase();
   });
 
-  Future<int> createPurchase({
-    String suffix = '',
-    double paidAmount = 40,
-  }) async {
+  Future<int> createPurchase({String suffix = '', double paidAmount = 40}) async {
     final now = DateTime.now();
+    final unique = now.microsecondsSinceEpoch;
     final invoice = PurchaseInvoice(
-      invoiceNumber: 'TEST-INV-$suffix-${now.microsecondsSinceEpoch}',
+      invoiceNumber: 'TEST-INV-$suffix-$unique',
       supplierId: supplierId,
       purchaseDate: now,
       totalAmount: 1000,
@@ -110,7 +108,7 @@ void main() {
       createdBy: userId,
       createdAt: now,
       updatedAt: now,
-      syncId: 'test-invoice-$suffix-${now.microsecondsSinceEpoch}',
+      syncId: 'test-invoice-$suffix-$unique',
     );
     final item = PurchaseItem(
       purchaseInvoiceId: 0,
@@ -120,7 +118,7 @@ void main() {
       totalAmount: 1000,
       createdAt: now,
       updatedAt: now,
-      syncId: 'test-item-$suffix-${now.microsecondsSinceEpoch}',
+      syncId: 'test-item-$suffix-$unique',
     );
     return purchaseService.addPurchase(
       invoice: invoice,
@@ -177,9 +175,10 @@ void main() {
     bool allocationDeleted = false,
   }) async {
     final now = DateTime.now().toIso8601String();
+    final unique = DateTime.now().microsecondsSinceEpoch;
     final saleId = await db.insert('sales', {
-      'sync_id': 'test-sale-${DateTime.now().microsecondsSinceEpoch}',
-      'sale_number': 'TEST-SALE-${DateTime.now().microsecondsSinceEpoch}',
+      'sync_id': 'test-sale-$unique',
+      'sale_number': 'TEST-SALE-$unique',
       'client_id': null,
       'tank_id': null,
       'driver_id': null,
@@ -214,7 +213,7 @@ void main() {
       'updated_at': now,
       'is_deleted': allocationDeleted ? 1 : 0,
       'is_synced': 0,
-      'sync_id': 'test-allocation-${DateTime.now().microsecondsSinceEpoch}',
+      'sync_id': 'test-allocation-$unique',
     });
     return saleId;
   }
@@ -232,8 +231,8 @@ void main() {
         inventoryLayerId: ids['layer']!,
       );
 
-      expect(
-        () => purchaseService.deletePurchase(invoiceId),
+      await expectLater(
+        purchaseService.deletePurchase(invoiceId),
         throwsA(isA<StateError>()),
       );
 

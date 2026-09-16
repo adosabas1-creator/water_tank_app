@@ -16,7 +16,8 @@ class SaleService {
 
     return await db.transaction((txn) async {
       await _validateSaleReferences(txn, sale);
-      final allocationResult = await _allocateInventoryFIFO(txn, sale.units, sale.supplierId);
+      final allocationResult =
+          await _allocateInventoryFIFO(txn, sale.units, sale.supplierId);
       final now = DateTime.now().toIso8601String();
       final profitAmount = sale.totalAmount - allocationResult.totalCost;
 
@@ -46,8 +47,10 @@ class SaleService {
         isSynced: false,
       );
 
-      final saleId = await txn.insert('sales', calculatedSale.toMap()..remove('id'));
-      await _insertAllocations(txn, saleId, sale.syncId, allocationResult.allocations, now);
+      final saleId =
+          await txn.insert('sales', calculatedSale.toMap()..remove('id'));
+      await _insertAllocations(
+          txn, saleId, sale.syncId, allocationResult.allocations, now);
       await _createClientDebtIfNeeded(txn, calculatedSale, saleId, now);
 
       return Sale(
@@ -80,18 +83,29 @@ class SaleService {
 
   Future<void> _validateSaleReferences(dynamic txn, Sale sale) async {
     if (sale.supplierId <= 0) throw ArgumentError('المورد المحدد غير صالح.');
-    final supplier = await txn.query('suppliers', columns: ['id'], where: 'id = ? AND is_deleted = 0', whereArgs: [sale.supplierId], limit: 1);
+    final supplier = await txn.query('suppliers',
+        columns: ['id'],
+        where: 'id = ? AND is_deleted = 0',
+        whereArgs: [sale.supplierId],
+        limit: 1);
     if (supplier.isEmpty) throw StateError('المورد غير موجود أو محذوف.');
 
     if (sale.clientId != null) {
       if (sale.clientId! <= 0) throw ArgumentError('العميل المحدد غير صالح.');
-      final client = await txn.query('clients', columns: ['id'], where: 'id = ? AND is_deleted = 0', whereArgs: [sale.clientId], limit: 1);
+      final client = await txn.query('clients',
+          columns: ['id'],
+          where: 'id = ? AND is_deleted = 0',
+          whereArgs: [sale.clientId],
+          limit: 1);
       if (client.isEmpty) throw StateError('العميل غير موجود أو محذوف.');
     }
   }
 
-  Future<_InventoryAllocationResult> _allocateInventoryFIFO(dynamic txn, int requestedUnits, int supplierId) async {
-    if (requestedUnits <= 0) throw Exception('كمية البيع يجب أن تكون أكبر من صفر.');
+  Future<_InventoryAllocationResult> _allocateInventoryFIFO(
+      dynamic txn, int requestedUnits, int supplierId) async {
+    if (requestedUnits <= 0) {
+      throw Exception('كمية البيع يجب أن تكون أكبر من صفر.');
+    }
 
     final layers = await txn.query(
       'inventory_layers',
@@ -105,21 +119,37 @@ class SaleService {
 
     for (final layer in layers) {
       final purchaseItemId = layer['purchase_item_id'] as int;
-      final purchaseItem = await txn.query('purchase_items', columns: ['purchase_invoice_id'], where: 'id = ? AND is_deleted = 0', whereArgs: [purchaseItemId], limit: 1);
-      if (purchaseItem.isEmpty) throw Exception('تعذر العثور على صنف الشراء المرتبط بطبقة المخزون.');
+      final purchaseItem = await txn.query('purchase_items',
+          columns: ['purchase_invoice_id'],
+          where: 'id = ? AND is_deleted = 0',
+          whereArgs: [purchaseItemId],
+          limit: 1);
+      if (purchaseItem.isEmpty) {
+        throw Exception('تعذر العثور على صنف الشراء المرتبط بطبقة المخزون.');
+      }
 
-      final purchaseInvoiceId = purchaseItem.first['purchase_invoice_id'] as int;
-      final purchaseInvoice = await txn.query('purchase_invoices', columns: ['supplier_id'], where: 'id = ? AND is_deleted = 0', whereArgs: [purchaseInvoiceId], limit: 1);
-      if (purchaseInvoice.isEmpty) throw Exception('تعذر العثور على فاتورة الشراء المرتبطة بطبقة المخزون.');
+      final purchaseInvoiceId =
+          purchaseItem.first['purchase_invoice_id'] as int;
+      final purchaseInvoice = await txn.query('purchase_invoices',
+          columns: ['supplier_id'],
+          where: 'id = ? AND is_deleted = 0',
+          whereArgs: [purchaseInvoiceId],
+          limit: 1);
+      if (purchaseInvoice.isEmpty) {
+        throw Exception(
+            'تعذر العثور على فاتورة الشراء المرتبطة بطبقة المخزون.');
+      }
 
       final layerSupplierId = purchaseInvoice.first['supplier_id'] as int;
       if (layerSupplierId != supplierId) continue;
       supplierLayers.add(layer);
-      availableSupplierUnits += ((layer['remaining_units'] as num?)?.toInt() ?? 0);
+      availableSupplierUnits +=
+          ((layer['remaining_units'] as num?)?.toInt() ?? 0);
     }
 
     if (availableSupplierUnits < requestedUnits) {
-      throw Exception('مخزون المورد المحدد غير كافٍ. المتوفر للمورد: $availableSupplierUnits وحدة، والمطلوب: $requestedUnits وحدة.');
+      throw Exception(
+          'مخزون المورد المحدد غير كافٍ. المتوفر للمورد: $availableSupplierUnits وحدة، والمطلوب: $requestedUnits وحدة.');
     }
 
     var remainingToConsume = requestedUnits;
@@ -133,23 +163,46 @@ class SaleService {
       final purchaseItemId = layer['purchase_item_id'] as int;
       final remainingUnits = (layer['remaining_units'] as num).toInt();
       final unitCost = (layer['unit_cost'] as num).toDouble();
-      final consumedUnits = remainingToConsume < remainingUnits ? remainingToConsume : remainingUnits;
+      final consumedUnits = remainingToConsume < remainingUnits
+          ? remainingToConsume
+          : remainingUnits;
       final costAmount = consumedUnits * unitCost;
       final newRemainingUnits = remainingUnits - consumedUnits;
 
-      final changed = await txn.update('inventory_layers', {'remaining_units': newRemainingUnits, 'updated_at': now, 'is_synced': 0}, where: 'id = ? AND is_deleted = 0', whereArgs: [layerId]);
-      if (changed != 1) throw StateError('تعذر تحديث طبقة المخزون أثناء البيع.');
+      final changed = await txn.update(
+          'inventory_layers',
+          {
+            'remaining_units': newRemainingUnits,
+            'updated_at': now,
+            'is_synced': 0
+          },
+          where: 'id = ? AND is_deleted = 0',
+          whereArgs: [layerId]);
+      if (changed != 1) {
+        throw StateError('تعذر تحديث طبقة المخزون أثناء البيع.');
+      }
 
-      allocations.add({'inventory_layer_id': layerId, 'purchase_item_id': purchaseItemId, 'supplier_id': supplierId, 'units': consumedUnits, 'unit_cost': unitCost, 'cost_amount': costAmount});
+      allocations.add({
+        'inventory_layer_id': layerId,
+        'purchase_item_id': purchaseItemId,
+        'supplier_id': supplierId,
+        'units': consumedUnits,
+        'unit_cost': unitCost,
+        'cost_amount': costAmount
+      });
       totalCost += costAmount;
       remainingToConsume -= consumedUnits;
     }
 
-    if (remainingToConsume != 0) throw Exception('تعذر إكمال استهلاك مخزون المورد بطريقة FIFO.');
-    return _InventoryAllocationResult(allocations: allocations, totalCost: totalCost);
+    if (remainingToConsume != 0) {
+      throw Exception('تعذر إكمال استهلاك مخزون المورد بطريقة FIFO.');
+    }
+    return _InventoryAllocationResult(
+        allocations: allocations, totalCost: totalCost);
   }
 
-  Future<void> _insertAllocations(dynamic txn, int saleId, String saleSyncId, List<Map<String, dynamic>> allocations, String now) async {
+  Future<void> _insertAllocations(dynamic txn, int saleId, String saleSyncId,
+      List<Map<String, dynamic>> allocations, String now) async {
     for (final allocation in allocations) {
       await txn.insert('sale_inventory_allocations', {
         'sale_id': saleId,
@@ -163,32 +216,58 @@ class SaleService {
         'updated_at': now,
         'is_deleted': 0,
         'is_synced': 0,
-        'sync_id': 'sale_alloc_${saleSyncId}_${allocation['inventory_layer_id']}_${saleId}',
+        'sync_id':
+            'sale_alloc_${saleSyncId}_${allocation['inventory_layer_id']}_$saleId',
       });
     }
   }
 
   Future<void> _restoreSaleInventory(dynamic txn, int saleId) async {
-    final allocations = await txn.query('sale_inventory_allocations', where: 'sale_id = ? AND is_deleted = 0', whereArgs: [saleId]);
+    final allocations = await txn.query('sale_inventory_allocations',
+        where: 'sale_id = ? AND is_deleted = 0', whereArgs: [saleId]);
     for (final allocation in allocations) {
       final layerId = allocation['inventory_layer_id'] as int;
       final units = (allocation['units'] as num).toInt();
       if (units <= 0) throw StateError('تخصيص مخزون غير صالح مرتبط بالمبيعة.');
 
-      final layer = await txn.query('inventory_layers', columns: ['remaining_units'], where: 'id = ? AND is_deleted = 0', whereArgs: [layerId], limit: 1);
-      if (layer.isEmpty) throw StateError('تعذر العثور على طبقة مخزون نشطة لإرجاع كمية البيع.');
+      final layer = await txn.query('inventory_layers',
+          columns: ['remaining_units'],
+          where: 'id = ? AND is_deleted = 0',
+          whereArgs: [layerId],
+          limit: 1);
+      if (layer.isEmpty) {
+        throw StateError('تعذر العثور على طبقة مخزون نشطة لإرجاع كمية البيع.');
+      }
 
-      final remainingUnits = (layer.first['remaining_units'] as num?)?.toInt() ?? 0;
-      final changed = await txn.update('inventory_layers', {'remaining_units': remainingUnits + units, 'updated_at': DateTime.now().toIso8601String(), 'is_synced': 0}, where: 'id = ? AND is_deleted = 0', whereArgs: [layerId]);
+      final remainingUnits =
+          (layer.first['remaining_units'] as num?)?.toInt() ?? 0;
+      final changed = await txn.update(
+          'inventory_layers',
+          {
+            'remaining_units': remainingUnits + units,
+            'updated_at': DateTime.now().toIso8601String(),
+            'is_synced': 0
+          },
+          where: 'id = ? AND is_deleted = 0',
+          whereArgs: [layerId]);
       if (changed != 1) throw StateError('تعذر إرجاع كمية البيع إلى المخزون.');
     }
   }
 
   Future<void> _softDeleteSaleAllocations(dynamic txn, int saleId) async {
-    await txn.update('sale_inventory_allocations', {'is_deleted': 1, 'is_synced': 0, 'updated_at': DateTime.now().toIso8601String()}, where: 'sale_id = ? AND is_deleted = 0', whereArgs: [saleId]);
+    await txn.update(
+        'sale_inventory_allocations',
+        {
+          'is_deleted': 1,
+          'is_synced': 0,
+          'updated_at': DateTime.now().toIso8601String()
+        },
+        where: 'sale_id = ? AND is_deleted = 0',
+        whereArgs: [saleId]);
   }
 
-  Future<void> _createClientDebtIfNeeded(dynamic txn, Sale sale, int saleId, String now) async {
+  Future<void> _createClientDebtIfNeeded(
+      dynamic txn, Sale sale, int saleId, String now) async {
     if (sale.clientId == null || sale.clientPaymentStatus != 'unpaid') return;
     final transaction = AccountTransaction(
       accountType: 'client',
@@ -208,7 +287,21 @@ class SaleService {
   }
 
   Future<void> _softDeleteClientDebt(dynamic txn, Sale sale) async {
-    await txn.update('account_transactions', {'is_deleted': 1, 'is_synced': 0, 'updated_at': DateTime.now().toIso8601String()}, where: 'account_type = ? AND reference_id = ? AND transaction_type = ? AND sync_id = ? AND is_deleted = 0', whereArgs: ['client', sale.clientId, 'debt', 'sale_debt_${sale.syncId}']);
+    await txn.update(
+        'account_transactions',
+        {
+          'is_deleted': 1,
+          'is_synced': 0,
+          'updated_at': DateTime.now().toIso8601String()
+        },
+        where:
+            'account_type = ? AND reference_id = ? AND transaction_type = ? AND sync_id = ? AND is_deleted = 0',
+        whereArgs: [
+          'client',
+          sale.clientId,
+          'debt',
+          'sale_debt_${sale.syncId}'
+        ]);
   }
 
   Future<List<Map<String, dynamic>>> getSupplierSalesShareReport() async {
@@ -228,13 +321,19 @@ class SaleService {
 
   Future<List<Sale>> getAllSales({int? driverId}) async {
     final db = await _dbHelper.database;
-    final result = await db.query('sales', where: driverId == null ? 'is_deleted = 0' : 'is_deleted = 0 AND driver_id = ?', whereArgs: driverId == null ? null : [driverId], orderBy: 'sale_date DESC');
+    final result = await db.query('sales',
+        where: driverId == null
+            ? 'is_deleted = 0'
+            : 'is_deleted = 0 AND driver_id = ?',
+        whereArgs: driverId == null ? null : [driverId],
+        orderBy: 'sale_date DESC');
     return result.map((e) => Sale.fromMap(e)).toList();
   }
 
   Future<Sale?> getSaleById(int id) async {
     final db = await _dbHelper.database;
-    final result = await db.query('sales', where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
+    final result = await db
+        .query('sales', where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
     if (result.isNotEmpty) return Sale.fromMap(result.first);
     return null;
   }
@@ -247,7 +346,8 @@ class SaleService {
 
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
-      final oldRows = await txn.query('sales', where: 'id = ? AND is_deleted = 0', whereArgs: [sale.id], limit: 1);
+      final oldRows = await txn.query('sales',
+          where: 'id = ? AND is_deleted = 0', whereArgs: [sale.id], limit: 1);
       if (oldRows.isEmpty) throw Exception('البيع غير موجود أو تم حذفه.');
       final oldSale = Sale.fromMap(oldRows.first);
 
@@ -256,7 +356,8 @@ class SaleService {
       await _softDeleteSaleAllocations(txn, oldSale.id!);
       await _softDeleteClientDebt(txn, oldSale);
 
-      final allocationResult = await _allocateInventoryFIFO(txn, sale.units, sale.supplierId);
+      final allocationResult =
+          await _allocateInventoryFIFO(txn, sale.units, sale.supplierId);
       final now = DateTime.now().toIso8601String();
       final profitAmount = sale.totalAmount - allocationResult.totalCost;
       final updatedSale = Sale(
@@ -287,10 +388,12 @@ class SaleService {
 
       final data = updatedSale.toMap()..remove('id');
       data['is_synced'] = 0;
-      final changed = await txn.update('sales', data, where: 'id = ? AND is_deleted = 0', whereArgs: [sale.id]);
+      final changed = await txn.update('sales', data,
+          where: 'id = ? AND is_deleted = 0', whereArgs: [sale.id]);
       if (changed != 1) throw StateError('تعذر تحديث المبيعة.');
 
-      await _insertAllocations(txn, sale.id!, oldSale.syncId, allocationResult.allocations, now);
+      await _insertAllocations(
+          txn, sale.id!, oldSale.syncId, allocationResult.allocations, now);
       await _createClientDebtIfNeeded(txn, updatedSale, sale.id!, now);
     });
   }
@@ -301,7 +404,8 @@ class SaleService {
     final db = await _dbHelper.database;
 
     await db.transaction((txn) async {
-      final rows = await txn.query('sales', where: 'id = ? AND is_deleted = 0', whereArgs: [id], limit: 1);
+      final rows = await txn.query('sales',
+          where: 'id = ? AND is_deleted = 0', whereArgs: [id], limit: 1);
       if (rows.isEmpty) throw StateError('البيع غير موجود أو تم حذفه مسبقًا.');
       final sale = Sale.fromMap(rows.first);
 
@@ -309,7 +413,15 @@ class SaleService {
       await _softDeleteSaleAllocations(txn, sale.id!);
       await _softDeleteClientDebt(txn, sale);
 
-      final changed = await txn.update('sales', {'is_deleted': 1, 'is_synced': 0, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
+      final changed = await txn.update(
+          'sales',
+          {
+            'is_deleted': 1,
+            'is_synced': 0,
+            'updated_at': DateTime.now().toIso8601String()
+          },
+          where: 'id = ? AND is_deleted = 0',
+          whereArgs: [id]);
       if (changed != 1) throw StateError('تعذر حذف المبيعة.');
     });
   }
@@ -319,5 +431,6 @@ class _InventoryAllocationResult {
   final List<Map<String, dynamic>> allocations;
   final double totalCost;
 
-  const _InventoryAllocationResult({required this.allocations, required this.totalCost});
+  const _InventoryAllocationResult(
+      {required this.allocations, required this.totalCost});
 }

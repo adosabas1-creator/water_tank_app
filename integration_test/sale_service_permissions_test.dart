@@ -52,7 +52,7 @@ void main() {
   }
 
   Sale probeSale() {
-    final now = DateTime.now();
+    final now = DateTime.now().toIso8601String();
     return Sale(
       id: 999999,
       syncId: 'permission-probe',
@@ -105,7 +105,7 @@ void main() {
   for (final role in ['admin', 'deputy_manager', 'member', 'driver']) {
     testWidgets('$role sales edit permission gate', (tester) async {
       PermissionService.setCurrentUser(userFor(role));
-      final action = saleService.updateSale(probeSale());
+      Future<void> action() => saleService.updateSale(probeSale());
       if (role == 'member' || role == 'driver') {
         await expectPermissionDenied(action);
       } else {
@@ -115,7 +115,7 @@ void main() {
 
     testWidgets('$role sales delete permission gate', (tester) async {
       PermissionService.setCurrentUser(userFor(role));
-      final action = saleService.deleteSale(999999);
+      Future<void> action() => saleService.deleteSale(999999);
       if (role == 'member' || role == 'driver') {
         await expectPermissionDenied(action);
       } else {
@@ -129,6 +129,7 @@ void main() {
     final before = await db.rawQuery('SELECT COUNT(*) AS c FROM sales');
     await expectPermissionDenied(() => saleService.deleteSale(999999));
     final after = await db.rawQuery('SELECT COUNT(*) AS c FROM sales');
-    expect((after.single['c'] as num).toInt(), (before.single['c'] as num).toInt());
+    expect((after.single['c'] as num).toInt(),
+        (before.single['c'] as num).toInt());
   });
 }

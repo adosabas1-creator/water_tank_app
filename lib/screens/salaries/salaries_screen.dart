@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 
 import '../../models/salary.dart';
 import '../../services/salary_service.dart';
+import '../../core/auth/auth_service.dart';
 import '../../core/auth/user_provider.dart';
+import '../../models/user.dart';
 
 class SalariesScreen extends StatefulWidget {
   const SalariesScreen({super.key});
@@ -15,12 +17,27 @@ class SalariesScreen extends StatefulWidget {
 
 class _SalariesScreenState extends State<SalariesScreen> {
   final SalaryService _service = SalaryService();
+  final AuthService _authService = AuthService();
   late Future<List<Salary>> _future;
+  List<User> _users = [];
 
   @override
   void initState() {
     super.initState();
     _future = _service.getAllSalaries();
+    _loadUsers();
+  }
+
+  Future<void> _loadUsers() async {
+    try {
+      final users = await _authService.getAllUsers();
+      if (!mounted) return;
+      setState(() {
+        _users = users;
+      });
+    } catch (_) {
+      // تبقى قائمة المستخدمين فارغة إذا تعذر تحميلها.
+    }
   }
 
   void _refresh() {
@@ -29,12 +46,21 @@ class _SalariesScreenState extends State<SalariesScreen> {
     });
   }
 
+  String _employeeName(int employeeId) {
+    for (final user in _users) {
+      if (user.id == employeeId) {
+        final name = user.fullName.trim();
+        if (name.isNotEmpty) return name;
+        return user.username;
+      }
+    }
+    return 'موظف غير معروف';
+  }
+
   Future<void> _showSalaryDialog({Salary? salary}) async {
     final formKey = GlobalKey<FormState>();
 
-    final employeeController = TextEditingController(
-      text: salary?.employeeId.toString() ?? '',
-    );
+    int? selectedEmployeeId = salary?.employeeId;
     final monthController = TextEditingController(
       text: salary?.month ?? '',
     );
@@ -70,10 +96,8 @@ class _SalariesScreenState extends State<SalariesScreen> {
 
     double calculateNet() {
       final base = double.tryParse(baseController.text.trim()) ?? 0;
-      final advances =
-          double.tryParse(advancesController.text.trim()) ?? 0;
-      final deductions =
-          double.tryParse(deductionsController.text.trim()) ?? 0;
+      final advances = double.tryParse(advancesController.text.trim()) ?? 0;
+      final deductions = double.tryParse(deductionsController.text.trim()) ?? 0;
       return base - advances - deductions;
     }
 
@@ -106,10 +130,8 @@ class _SalariesScreenState extends State<SalariesScreen> {
             Future<void> save() async {
               if (!formKey.currentState!.validate()) return;
 
-              final employeeId =
-                  int.tryParse(employeeController.text.trim());
-              final baseSalary =
-                  double.tryParse(baseController.text.trim());
+              final employeeId = selectedEmployeeId;
+              final baseSalary = double.tryParse(baseController.text.trim());
               final advances =
                   double.tryParse(advancesController.text.trim()) ?? 0;
               final deductions =
@@ -123,18 +145,15 @@ class _SalariesScreenState extends State<SalariesScreen> {
 
               try {
                 final now = DateTime.now().toIso8601String();
-                final paymentDate =
-                    paymentDateController.text.trim().isEmpty
-                        ? null
-                        : paymentDateController.text.trim();
+                final paymentDate = paymentDateController.text.trim().isEmpty
+                    ? null
+                    : paymentDateController.text.trim();
 
-                final notes =
-                    notesController.text.trim().isEmpty
-                        ? null
-                        : notesController.text.trim();
+                final notes = notesController.text.trim().isEmpty
+                    ? null
+                    : notesController.text.trim();
 
-                final netSalary =
-                    baseSalary - advances - deductions;
+                final netSalary = baseSalary - advances - deductions;
 
                 if (salary == null) {
                   await _service.addSalary(
@@ -216,19 +235,38 @@ class _SalariesScreenState extends State<SalariesScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      TextFormField(
-                        controller: employeeController,
-                        enabled: !saving,
-                        keyboardType: TextInputType.number,
+                      DropdownButtonFormField<int>(
+                        initialValue:
+                            _users.any((u) => u.id == selectedEmployeeId)
+                                ? selectedEmployeeId
+                                : null,
                         decoration: const InputDecoration(
-                          labelText: 'رقم الموظف',
+                          labelText: 'الموظف',
                           border: OutlineInputBorder(),
                         ),
+                        items: _users
+                            .where((u) => u.id != null)
+                            .map(
+                              (user) => DropdownMenuItem<int>(
+                                value: user.id!,
+                                child: Text(
+                                  user.fullName.trim().isEmpty
+                                      ? user.username
+                                      : user.fullName,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: saving
+                            ? null
+                            : (value) {
+                                setDialogState(() {
+                                  selectedEmployeeId = value;
+                                });
+                              },
                         validator: (value) {
-                          final id =
-                              int.tryParse(value?.trim() ?? '');
-                          if (id == null || id <= 0) {
-                            return 'أدخل رقم موظف صحيح';
+                          if (value == null || value <= 0) {
+                            return 'اختر الموظف';
                           }
                           return null;
                         },
@@ -243,8 +281,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          if (value == null ||
-                              value.trim().isEmpty) {
+                          if (value == null || value.trim().isEmpty) {
                             return 'أدخل الشهر';
                           }
                           return null;
@@ -254,8 +291,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                       TextFormField(
                         controller: baseController,
                         enabled: !saving,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
+                        keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         decoration: const InputDecoration(
@@ -263,8 +299,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          final amount =
-                              double.tryParse(value?.trim() ?? '');
+                          final amount = double.tryParse(value?.trim() ?? '');
                           if (amount == null || amount < 0) {
                             return 'أدخل راتبًا صحيحًا';
                           }
@@ -276,8 +311,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                       TextFormField(
                         controller: advancesController,
                         enabled: !saving,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
+                        keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         decoration: const InputDecoration(
@@ -285,8 +319,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          final amount =
-                              double.tryParse(value?.trim() ?? '');
+                          final amount = double.tryParse(value?.trim() ?? '');
                           if (amount == null || amount < 0) {
                             return 'أدخل قيمة صحيحة';
                           }
@@ -298,8 +331,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                       TextFormField(
                         controller: deductionsController,
                         enabled: !saving,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
+                        keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         decoration: const InputDecoration(
@@ -307,8 +339,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
-                          final amount =
-                              double.tryParse(value?.trim() ?? '');
+                          final amount = double.tryParse(value?.trim() ?? '');
                           if (amount == null || amount < 0) {
                             return 'أدخل قيمة صحيحة';
                           }
@@ -358,9 +389,8 @@ class _SalariesScreenState extends State<SalariesScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: saving
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
+                  onPressed:
+                      saving ? null : () => Navigator.of(dialogContext).pop(),
                   child: const Text('إلغاء'),
                 ),
                 FilledButton(
@@ -384,7 +414,6 @@ class _SalariesScreenState extends State<SalariesScreen> {
       },
     );
 
-    employeeController.dispose();
     monthController.dispose();
     baseController.dispose();
     advancesController.dispose();
@@ -400,7 +429,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
         return AlertDialog(
           title: const Text('حذف الراتب'),
           content: Text(
-            'هل أنت متأكد من حذف راتب الموظف رقم ${salary.employeeId} لشهر ${salary.month}؟',
+            'هل أنت متأكد من حذف راتب الموظف ${_employeeName(salary.employeeId)} لشهر ${salary.month}؟',
           ),
           actions: [
             TextButton(
@@ -513,7 +542,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
                       child: Icon(Icons.payments),
                     ),
                     title: Text(
-                      'الموظف: ${salary.employeeId}',
+                      'الموظف: ${_employeeName(salary.employeeId)}',
                     ),
                     subtitle: Text(
                       'الشهر: ${salary.month}\n'

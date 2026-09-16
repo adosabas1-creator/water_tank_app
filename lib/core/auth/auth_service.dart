@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../database/database_helper.dart';
 import '../../models/user.dart';
 import '../constants/permissions.dart';
+import 'permission_service.dart';
 
 class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
@@ -230,6 +231,8 @@ class AuthService {
     required int userId,
     required String newPassword,
   }) async {
+    PermissionService.requireAdmin();
+
     if (newPassword.length < 6) {
       throw ArgumentError(
         'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل',

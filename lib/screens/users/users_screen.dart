@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../models/user.dart';
 import '../../core/auth/auth_service.dart';
 import '../../core/auth/user_provider.dart';
+import '../../core/auth/permission_service.dart';
 import '../../core/constants/permissions.dart';
 import '../../services/backup_service.dart';
 import '../../services/reset_service.dart';
@@ -666,19 +667,21 @@ class _UsersScreenState extends State<UsersScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ListTile(
-                      leading: const Icon(Icons.lock_reset),
-                      title: const Text('تغيير كلمة المرور'),
-                      subtitle: const Text(
-                        'تعيين كلمة مرور جديدة لهذا المستخدم',
+                    if (PermissionService.currentUser?.role == 'admin') ...[
+                      ListTile(
+                        leading: const Icon(Icons.lock_reset),
+                        title: const Text('تغيير كلمة المرور'),
+                        subtitle: const Text(
+                          'تعيين كلمة مرور جديدة لهذا المستخدم',
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                        onTap: () {
+                          Navigator.pop(context);
+                          _changeUserPassword(user);
+                        },
                       ),
-                      contentPadding: EdgeInsets.zero,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _changeUserPassword(user);
-                      },
-                    ),
-                    const Divider(),
+                      const Divider(),
+                    ],
                     ListTile(
                       leading: const Icon(Icons.key),
                       title: const Text('إعداد رمز الاسترداد'),

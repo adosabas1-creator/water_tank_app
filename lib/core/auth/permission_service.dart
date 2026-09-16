@@ -1,6 +1,14 @@
 import '../../models/user.dart';
 
 class PermissionService {
+  static User? _currentUser;
+
+  static void setCurrentUser(User? user) {
+    _currentUser = user;
+  }
+
+  static User? get currentUser => _currentUser;
+
   static bool hasPermission(User? user, String permissionKey) {
     if (user == null) return false;
     return user.permissions[permissionKey] ?? false;
@@ -14,5 +22,24 @@ class PermissionService {
   static bool hasAllPermissions(User? user, List<String> permissionKeys) {
     if (user == null) return false;
     return permissionKeys.every((key) => user.permissions[key] ?? false);
+  }
+
+  static void requirePermission(String permissionKey) {
+    if (!hasPermission(_currentUser, permissionKey)) {
+      throw StateError('ليس لديك صلاحية تنفيذ هذه العملية.');
+    }
+  }
+
+  static void requireManagementRole() {
+    final role = _currentUser?.role;
+    if (role != 'admin' && role != 'deputy_manager') {
+      throw StateError('ليس لديك صلاحية تنفيذ هذه العملية.');
+    }
+  }
+
+  static void requireAdmin() {
+    if (_currentUser?.role != 'admin') {
+      throw StateError('هذه العملية متاحة للمدير فقط.');
+    }
   }
 }

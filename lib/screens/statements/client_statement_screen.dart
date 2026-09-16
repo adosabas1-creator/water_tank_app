@@ -225,29 +225,78 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
 
       final document = pw.Document();
 
-      final rows = <List<String>>[
-        ['التاريخ', 'البيان', 'عليه', 'له', 'الرصيد'],
-        ..._entries.map((entry) {
-          final date = DateTime.tryParse(entry.date);
-          final dateText = date == null
-              ? entry.date
-              : '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      final rows = _entries.map((entry) {
+        final date = DateTime.tryParse(entry.date);
+        final dateText = date == null
+            ? entry.date
+            : '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
-          return [
-            dateText,
-            entry.description,
-            entry.debit > 0 ? entry.debit.toStringAsFixed(2) : '-',
-            entry.credit > 0 ? entry.credit.toStringAsFixed(2) : '-',
-            entry.balance.toStringAsFixed(2),
-          ];
-        }),
-      ];
+        return [
+          dateText,
+          entry.description,
+          entry.debit > 0 ? entry.debit.toStringAsFixed(2) : '-',
+          entry.credit > 0 ? entry.credit.toStringAsFixed(2) : '-',
+          entry.balance.toStringAsFixed(2),
+        ];
+      }).toList();
 
       final balance = _totalDebit - _totalCredit;
+
+      final balanceText = balance > 0
+          ? 'المتبقي عليه: ${balance.toStringAsFixed(2)} ريال'
+          : balance < 0
+              ? 'الرصيد له: ${balance.abs().toStringAsFixed(2)} ريال'
+              : 'الحساب مسدد بالكامل';
+
+      pw.Widget rtlText(
+        String text, {
+        double fontSize = 10,
+        bool bold = false,
+        pw.TextAlign align = pw.TextAlign.right,
+      }) {
+        return pw.Directionality(
+          textDirection: pw.TextDirection.rtl,
+          child: pw.Text(
+            text,
+            textAlign: align,
+            style: pw.TextStyle(
+              font: bold ? boldFont : regularFont,
+              fontSize: fontSize,
+            ),
+          ),
+        );
+      }
+
+      pw.Widget tableCell(
+        String text, {
+        bool bold = false,
+        pw.Alignment alignment = pw.Alignment.center,
+      }) {
+        return pw.Container(
+          alignment: alignment,
+          padding: const pw.EdgeInsets.symmetric(
+            horizontal: 5,
+            vertical: 6,
+          ),
+          child: pw.Directionality(
+            textDirection: pw.TextDirection.rtl,
+            child: pw.Text(
+              text,
+              textAlign: pw.TextAlign.center,
+              softWrap: true,
+              style: pw.TextStyle(
+                font: bold ? boldFont : regularFont,
+                fontSize: bold ? 8.5 : 8,
+              ),
+            ),
+          ),
+        );
+      }
 
       document.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.fromLTRB(28, 32, 28, 32),
           textDirection: pw.TextDirection.rtl,
           theme: pw.ThemeData.withFont(
             base: regularFont,
@@ -259,64 +308,148 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                 children: [
-                  pw.Text(
-                    'كشف حساب العميل',
-                    textAlign: pw.TextAlign.center,
-                    style: pw.TextStyle(
-                      font: boldFont,
+                  pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(
+                      vertical: 10,
+                      horizontal: 12,
+                    ),
+                    child: rtlText(
+                      'كشف حساب العميل',
                       fontSize: 20,
+                      bold: true,
+                      align: pw.TextAlign.center,
                     ),
                   ),
-                  pw.SizedBox(height: 8),
-                  pw.Text(
-                    'العميل: ${_client!.name}',
-                    style: pw.TextStyle(font: boldFont, fontSize: 14),
+
+                  pw.SizedBox(height: 10),
+
+                  pw.Container(
+                    width: double.infinity,
+                    padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(
+                        color: PdfColors.grey600,
+                        width: 0.7,
+                      ),
+                      borderRadius: pw.BorderRadius.circular(4),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                      children: [
+                        rtlText(
+                          'العميل: ${_client!.name}',
+                          fontSize: 14,
+                          bold: true,
+                        ),
+                        pw.SizedBox(height: 7),
+                        rtlText(
+                          'تاريخ الكشف: ${DateTime.now().toString().substring(0, 10)}',
+                          fontSize: 10,
+                        ),
+                      ],
+                    ),
                   ),
-                  pw.SizedBox(height: 4),
-                  pw.Text(
-                    'تاريخ الكشف: ${DateTime.now().toString().substring(0, 10)}',
-                    style: pw.TextStyle(font: regularFont, fontSize: 10),
-                  ),
+
                   pw.SizedBox(height: 16),
-                  pw.TableHelper.fromTextArray(
-                    headers: rows.first,
-                    data: rows.skip(1).toList(),
-                    headerStyle: pw.TextStyle(
-                      font: boldFont,
-                      fontSize: 9,
+
+                  if (rows.isNotEmpty)
+                    pw.Table(
+                      border: pw.TableBorder.all(
+                        color: PdfColors.grey,
+                        width: 0.5,
+                      ),
+                      columnWidths: {
+                        0: const pw.FlexColumnWidth(1.5),
+                        1: const pw.FlexColumnWidth(2.3),
+                        2: const pw.FlexColumnWidth(1.4),
+                        3: const pw.FlexColumnWidth(1.4),
+                        4: const pw.FlexColumnWidth(1.6),
+                      },
+                      children: [
+                        pw.TableRow(
+                          decoration: const pw.BoxDecoration(
+                            color: PdfColors.grey300,
+                          ),
+                          children: [
+                            tableCell('التاريخ', bold: true),
+                            tableCell('البيان', bold: true),
+                            tableCell('عليه', bold: true),
+                            tableCell('له', bold: true),
+                            tableCell('الرصيد', bold: true),
+                          ],
+                        ),
+                        ...rows.map(
+                          (row) => pw.TableRow(
+                            children: [
+                              tableCell(row[0]),
+                              tableCell(row[1]),
+                              tableCell(row[2]),
+                              tableCell(row[3]),
+                              tableCell(row[4]),
+                            ],
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(18),
+                      child: rtlText(
+                        'لا توجد حركات في حساب العميل',
+                        fontSize: 10,
+                        align: pw.TextAlign.center,
+                      ),
                     ),
-                    cellStyle: pw.TextStyle(
-                      font: regularFont,
-                      fontSize: 8,
+
+                  pw.SizedBox(height: 18),
+
+                  pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
                     ),
-                    headerDecoration:
-                        const pw.BoxDecoration(color: PdfColors.grey300),
-                    cellAlignment: pw.Alignment.center,
-                    headerAlignment: pw.Alignment.center,
-                    border: pw.TableBorder.all(
-                      color: PdfColors.grey,
-                      width: 0.5,
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(
+                        color: PdfColors.grey700,
+                        width: 0.8,
+                      ),
+                      borderRadius: pw.BorderRadius.circular(5),
                     ),
-                    cellPadding: const pw.EdgeInsets.all(4),
-                  ),
-                  pw.SizedBox(height: 16),
-                  pw.Text(
-                    'إجمالي عليه: ${_totalDebit.toStringAsFixed(2)} ريال',
-                    style: pw.TextStyle(font: boldFont, fontSize: 12),
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Text(
-                    'إجمالي له: ${_totalCredit.toStringAsFixed(2)} ريال',
-                    style: pw.TextStyle(font: boldFont, fontSize: 12),
-                  ),
-                  pw.SizedBox(height: 6),
-                  pw.Text(
-                    balance > 0
-                        ? 'المتبقي عليه: ${balance.toStringAsFixed(2)} ريال'
-                        : balance < 0
-                            ? 'الرصيد له: ${balance.abs().toStringAsFixed(2)} ريال'
-                            : 'الحساب مسدد بالكامل',
-                    style: pw.TextStyle(font: boldFont, fontSize: 14),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                      children: [
+                        rtlText(
+                          'إجمالي عليه: ${_totalDebit.toStringAsFixed(2)} ريال',
+                          fontSize: 11,
+                          bold: true,
+                        ),
+                        pw.SizedBox(height: 6),
+                        rtlText(
+                          'إجمالي له: ${_totalCredit.toStringAsFixed(2)} ريال',
+                          fontSize: 11,
+                          bold: true,
+                        ),
+                        pw.SizedBox(height: 10),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 9,
+                          ),
+                          decoration: const pw.BoxDecoration(
+                            color: PdfColors.grey200,
+                          ),
+                          child: rtlText(
+                            balanceText,
+                            fontSize: 14,
+                            bold: true,
+                            align: pw.TextAlign.center,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -326,6 +459,7 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
       );
 
       final bytes = await document.save();
+
       final safeName = _client!.name
           .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
           .trim();
@@ -344,6 +478,7 @@ class _ClientStatementScreenState extends State<ClientStatementScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('تعذر إنشاء أو مشاركة كشف الحساب: $e'),

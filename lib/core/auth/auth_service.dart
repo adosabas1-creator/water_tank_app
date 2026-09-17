@@ -177,18 +177,50 @@ static const String _businessId = 'alborai_water_tank';
             password: password,
           );
 
-          if (credential.user?.uid != null &&
-              user.firebaseUid != credential.user!.uid) {
-            await db.update(
-              'users',
-              {
-                'firebase_uid': credential.user!.uid,
-                'updated_at': DateTime.now().toIso8601String(),
-                'is_synced': 0,
-              },
-              where: 'id = ? AND is_deleted = 0',
-              whereArgs: [user.id],
-            );
+          final firebaseUid = credential.user?.uid;
+          if (firebaseUid != null && firebaseUid.isNotEmpty) {
+            final userDoc = await _firestore
+                .collection('businesses')
+                .doc(_businessId)
+                .collection('user_directory')
+                .doc(firebaseUid)
+                .get();
+
+            if (userDoc.exists) {
+              final remote = userDoc.data();
+
+              if (remote != null && remote['is_deleted'] != true) {
+                final permissions = <String, bool>{};
+                final rawPermissions = remote['permissions'];
+
+                if (rawPermissions is Map) {
+                  rawPermissions.forEach((key, value) {
+                    permissions[key.toString()] = value == true;
+                  });
+                }
+
+                await db.update(
+                  'users',
+                  {
+                    'firebase_uid': firebaseUid,
+                    'firebase_email': remote['firebase_email']?.toString() ??
+                        user.firebaseEmail,
+                    'username':
+                        remote['username']?.toString() ?? user.username,
+                    'full_name':
+                        remote['full_name']?.toString() ?? user.fullName,
+                    'role': remote['role']?.toString() ?? user.role,
+                    'permissions': User.permissionsToJson(permissions),
+                    'must_change_password':
+                        remote['must_change_password'] == true ? 1 : 0,
+                    'updated_at': DateTime.now().toIso8601String(),
+                    'is_synced': 0,
+                  },
+                  where: 'id = ? AND is_deleted = 0',
+                  whereArgs: [user.id],
+                );
+              }
+            }
           }
         } on firebase_auth.FirebaseAuthException catch (e) {
           // Allow local login only when Firebase is unreachable.

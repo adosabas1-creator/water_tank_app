@@ -389,6 +389,25 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 23) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS expenses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          expense_type TEXT NOT NULL,
+          amount REAL NOT NULL,
+          expense_date TEXT NOT NULL,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL,
+          FOREIGN KEY (created_by) REFERENCES users (id)
+        )
+      ''');
+    }
+
     if (oldVersion < 17) {
       final fillingColumns = await db.rawQuery(
         'PRAGMA table_info(filling_operations)',

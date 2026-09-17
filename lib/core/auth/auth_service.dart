@@ -55,6 +55,12 @@ static const String _businessId = 'alborai_water_tank';
       throw StateError('لا يمكن نشر المستخدم: Firebase UID غير موجود');
     }
 
+    if (_firebaseAuth.currentUser == null) {
+      throw StateError(
+        'المدير غير مسجل دخول في Firebase. أعد تسجيل الدخول بالإنترنت ثم حاول مرة أخرى.',
+      );
+    }
+
     await _firestore
         .collection('businesses')
         .doc(_businessId)
@@ -158,8 +164,26 @@ static const String _businessId = 'alborai_water_tank';
               whereArgs: [user.id],
             );
           }
-        } catch (_) {
-          // Local/offline authentication remains supported.
+        } on firebase_auth.FirebaseAuthException catch (e) {
+          // Allow local login only when Firebase is unreachable.
+          if (e.code == 'network-request-failed') {
+            // Offline mode: continue with the local account.
+          } else {
+            switch (e.code) {
+              case 'invalid-credential':
+              case 'wrong-password':
+              case 'user-not-found':
+                throw StateError('بيانات تسجيل الدخول إلى Firebase غير صحيحة');
+              case 'user-disabled':
+                throw StateError('هذا الحساب معطل في Firebase');
+              case 'too-many-requests':
+                throw StateError('تمت محاولات كثيرة. حاول مرة أخرى لاحقًا');
+              default:
+                throw StateError(
+                  'تعذر تسجيل الدخول إلى Firebase. رمز الخطأ: ${e.code}',
+                );
+            }
+          }
         }
       }
 

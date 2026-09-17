@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - diagnostic-db-check
+      - db-repair-v25
 
 jobs:
   build-apk:

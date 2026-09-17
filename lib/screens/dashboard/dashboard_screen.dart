@@ -97,7 +97,8 @@ class DashboardScreen extends StatelessWidget {
 
     try {
       final db = await DatabaseHelper().database;
-      final version = await db.getVersion();
+      final versionRows = await db.rawQuery('PRAGMA user_version');
+      final version = (versionRows.first['user_version'] as num?)?.toInt() ?? 0;
       final tableRows = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'expenses'",
       );

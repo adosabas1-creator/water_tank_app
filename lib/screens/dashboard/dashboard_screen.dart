@@ -4,6 +4,7 @@ import '../../core/auth/user_provider.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/permissions.dart';
 import '../../core/auth/permission_service.dart';
+import '../../core/database/database_helper.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -50,9 +51,104 @@ class DashboardScreen extends StatelessWidget {
             _buildCard(
                 context, 'المستخدمون', Icons.admin_panel_settings, '/users'),
           _buildCard(context, 'سجل العمليات', Icons.history, '/logs'),
+          _buildDatabaseDiagnosticCard(context),
         ],
       ),
     );
+  }
+
+  Widget _buildDatabaseDiagnosticCard(BuildContext context) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () => _showDatabaseDiagnostic(context),
+        borderRadius: BorderRadius.circular(12),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.storage_rounded, size: 48, color: Colors.orange),
+            SizedBox(height: 8),
+            Text(
+              'فحص قاعدة البيانات',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDatabaseDiagnostic(BuildContext context) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('جاري فحص قاعدة البيانات...')),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final db = await DatabaseHelper().database;
+      final version = await db.getVersion();
+      final tableRows = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'expenses'",
+      );
+      final expensesExists = tableRows.isNotEmpty;
+      int? expensesCount;
+
+      if (expensesExists) {
+        final countRows = await db.rawQuery(
+          'SELECT COUNT(*) AS count FROM expenses',
+        );
+        expensesCount = (countRows.first['count'] as num?)?.toInt() ?? 0;
+      }
+
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('تشخيص قاعدة البيانات'),
+          content: SelectableText(
+            'اسم قاعدة البيانات: ${AppConstants.localDbName}\\n'
+            'إصدار قاعدة البيانات الفعلي: $version\\n'
+            'الإصدار المتوقع من التطبيق: ${AppConstants.localDbVersion}\\n'
+            'جدول expenses: ${expensesExists ? 'موجود ✅' : 'غير موجود ❌'}\\n'
+            'عدد سجلات expenses: ${expensesCount ?? 'غير متاح لأن الجدول غير موجود'}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('فشل فحص قاعدة البيانات'),
+          content: SelectableText('حدث خطأ أثناء الفحص:\\n$e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildCard(

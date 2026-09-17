@@ -388,25 +388,173 @@ class DatabaseHelper {
     }
   }
 
+  Future<void> _repairMissingTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS account_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_type TEXT NOT NULL,
+        reference_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        transaction_type TEXT NOT NULL,
+        transaction_date TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (created_by) REFERENCES users (id)
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_account_transactions_reference
+      ON account_transactions (account_type, reference_id, transaction_date)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS purchase_invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_number TEXT UNIQUE NOT NULL,
+        supplier_id INTEGER NOT NULL,
+        purchase_date TEXT NOT NULL,
+        total_amount REAL NOT NULL,
+        payment_status TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
+        FOREIGN KEY (created_by) REFERENCES users (id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS purchase_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        purchase_invoice_id INTEGER NOT NULL,
+        item_type TEXT NOT NULL DEFAULT 'tank',
+        units INTEGER NOT NULL,
+        purchase_price REAL NOT NULL,
+        total_amount REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices (id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS inventory_layers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        purchase_item_id INTEGER NOT NULL,
+        item_type TEXT NOT NULL DEFAULT 'tank',
+        original_units INTEGER NOT NULL,
+        remaining_units INTEGER NOT NULL,
+        unit_cost REAL NOT NULL,
+        layer_date TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_purchase_invoices_supplier
+      ON purchase_invoices (supplier_id, purchase_date)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_purchase_items_invoice
+      ON purchase_items (purchase_invoice_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_inventory_layers_fifo
+      ON inventory_layers (item_type, layer_date, id)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sale_inventory_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sale_id INTEGER NOT NULL,
+        inventory_layer_id INTEGER NOT NULL,
+        purchase_item_id INTEGER NOT NULL,
+        supplier_id INTEGER NOT NULL,
+        units INTEGER NOT NULL,
+        unit_cost REAL NOT NULL,
+        cost_amount REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales (id),
+        FOREIGN KEY (inventory_layer_id) REFERENCES inventory_layers (id),
+        FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id),
+        FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_sale
+      ON sale_inventory_allocations (sale_id)
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_supplier
+      ON sale_inventory_allocations (supplier_id, created_at)
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        expense_type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        expense_date TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (created_by) REFERENCES users (id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS salaries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id INTEGER NOT NULL,
+        month TEXT NOT NULL,
+        base_salary REAL NOT NULL,
+        advances REAL DEFAULT 0,
+        deductions REAL DEFAULT 0,
+        net_salary REAL NOT NULL,
+        payment_date TEXT,
+        notes TEXT,
+        created_by INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (employee_id) REFERENCES users (id),
+        FOREIGN KEY (created_by) REFERENCES users (id)
+      )
+    ''');
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 24) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS expenses (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          expense_type TEXT NOT NULL,
-          amount REAL NOT NULL,
-          expense_date TEXT NOT NULL,
-          notes TEXT,
-          created_by INTEGER NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          is_deleted INTEGER DEFAULT 0,
-          is_synced INTEGER DEFAULT 0,
-          sync_id TEXT UNIQUE NOT NULL,
-          FOREIGN KEY (created_by) REFERENCES users (id)
-        )
-      ''');
+    if (oldVersion < 25) {
+      await _repairMissingTables(db);
     }
+
 
     if (oldVersion < 17) {
       final fillingColumns = await db.rawQuery(

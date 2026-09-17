@@ -24,6 +24,8 @@ Future<void> seedAdminUser() async {
       'sync_id': const Uuid().v4(),
       'username': 'admin',
       'password_hash': passwordHash,
+      'firebase_uid': 'hkToxDvTG0Y9uQ4ltAJok2Fr8j72',
+      'firebase_email': 'adosabas1@gmail.com',
       'full_name': 'مدير النظام',
       'role': 'admin',
       'permissions':
@@ -37,7 +39,19 @@ Future<void> seedAdminUser() async {
 
     debugPrint('Admin user created successfully');
   } else {
-    debugPrint('Admin user already exists');
+    await db.update(
+      'users',
+      {
+        'firebase_uid': 'hkToxDvTG0Y9uQ4ltAJok2Fr8j72',
+        'firebase_email': 'adosabas1@gmail.com',
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'username = ?',
+      whereArgs: ['admin'],
+    );
+
+    debugPrint('Admin Firebase link updated successfully');
   }
 
 

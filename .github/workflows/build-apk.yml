@@ -2,6 +2,9 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - diagnostic-db-check
 
 jobs:
   build-apk:
@@ -26,12 +29,12 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
-      - name: Build release APK
-        run: flutter build apk --release
+      - name: Build diagnostic APK
+        run: flutter build apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: water-tank-app-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: water-tank-app-diagnostic-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error

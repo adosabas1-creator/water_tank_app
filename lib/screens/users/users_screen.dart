@@ -239,11 +239,25 @@ class _UsersScreenState extends State<UsersScreen> {
               final fullName = fullNameCtrl.text.trim();
 
               if (username.isEmpty ||
+                  email.isEmpty ||
                   password.isEmpty ||
                   fullName.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('يرجى إكمال جميع الحقول المطلوبة'),
+                    content: Text('يرجى إكمال جميع الحقول المطلوبة، بما فيها بريد Firebase'),
+                  ),
+                );
+                return;
+              }
+
+              final emailRegex = RegExp(
+                r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+              );
+
+              if (!emailRegex.hasMatch(email)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('يرجى إدخال بريد إلكتروني صحيح لـ Firebase'),
                   ),
                 );
                 return;
@@ -263,7 +277,9 @@ class _UsersScreenState extends State<UsersScreen> {
               try {
                 final permissions = role == 'admin'
                     ? DefaultPermissions.admin()
-                    : DefaultPermissions.deputyManager();
+                    : role == 'deputy_manager'
+                        ? DefaultPermissions.deputyManager()
+                        : DefaultPermissions.member();
 
                 await _authService.createUser(
                   username: username,
@@ -320,7 +336,8 @@ class _UsersScreenState extends State<UsersScreen> {
                       controller: emailCtrl,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                        labelText: 'البريد الإلكتروني لـ Firebase (اختياري)',
+                        labelText: 'البريد الإلكتروني لـ Firebase *',
+                        hintText: 'مثال: member@example.com',
                       ),
                     ),
                     TextField(
@@ -400,9 +417,11 @@ class _UsersScreenState extends State<UsersScreen> {
     final fullNameCtrl = TextEditingController(text: user.fullName);
 
     String role =
-        (user.role == 'admin' || user.role == 'deputy_manager')
+        (user.role == 'admin' ||
+                user.role == 'deputy_manager' ||
+                user.role == 'member')
             ? user.role
-            : 'deputy_manager';
+            : 'member';
 
     bool isSaving = false;
 

@@ -1,6 +1,9 @@
 import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:sqflite/sqflite.dart';
 import 'dart:convert';
 import '../database/database_helper.dart';
 import '../../models/user.dart';
@@ -11,6 +14,54 @@ class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
       firebase_auth.FirebaseAuth.instance;
   final DatabaseHelper _dbHelper = DatabaseHelper();
+final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+static const String _businessId = 'alborai_water_tank';
+  Future<firebase_auth.FirebaseAuth> _secondaryAuth() async {
+    const appName = 'water_tank_secondary_auth';
+
+    FirebaseApp app;
+    try {
+      app = Firebase.app(appName);
+    } catch (_) {
+      app = await Firebase.initializeApp(
+        name: appName,
+        options: Firebase.app().options,
+      );
+    }
+
+    return firebase_auth.FirebaseAuth.instanceFor(app: app);
+  }
+
+
+
+  Future<void> _publishUserDirectory(User user, {bool isDeleted = false}) async {
+    final data = <String, dynamic>{
+      'sync_id': user.syncId,
+      'firebase_uid': user.firebaseUid,
+      'firebase_email': user.firebaseEmail,
+      'username': user.username,
+      'full_name': user.fullName,
+      'role': user.role,
+      'driver_id': user.driverId,
+      'permissions': user.permissions,
+      'created_at': user.createdAt,
+      'updated_at': user.updatedAt,
+      'must_change_password': user.mustChangePassword,
+      'is_deleted': isDeleted,
+    };
+
+    final uid = user.firebaseUid;
+    if (uid == null || uid.isEmpty) {
+      throw StateError('لا يمكن نشر المستخدم: Firebase UID غير موجود');
+    }
+
+    await _firestore
+        .collection('businesses')
+        .doc(_businessId)
+        .collection('user_directory')
+        .doc(uid)
+        .set(data, SetOptions(merge: true));
+  }
 
   Future<String?> signInToFirebase(String email, String password) async {
     final credential = await _firebaseAuth.signInWithEmailAndPassword(
@@ -20,14 +71,28 @@ class AuthService {
     return credential.user?.uid;
   }
 
-  Future<String?> createFirebaseUser(String email, String password) async {
-    final credential = await _firebaseAuth.createUserWithEmailAndPassword(
-      email: email.trim(),
-      password: password,
-    );
-    final uid = credential.user?.uid;
-    await _firebaseAuth.signOut();
-    return uid;
+  Future<String> createFirebaseUser(String email, String password) async {
+    final secondaryAuth = await _secondaryAuth();
+
+    try {
+      final credential =
+          await secondaryAuth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+
+      final uid = credential.user?.uid;
+
+      if (uid == null || uid.isEmpty) {
+        throw StateError(
+          "تعذر الحصول على معرف Firebase للمستخدم",
+        );
+      }
+
+      return uid;
+    } finally {
+      await secondaryAuth.signOut();
+    }
   }
 
   Future<void> sendPasswordResetEmail(String email) async {
@@ -61,6 +126,8 @@ class AuthService {
 
     final db = await _dbHelper.database;
     final passwordHash = _hashPassword(password);
+
+    // 1. Local login: keeps the app usable offline.
     final result = await db.query(
       'users',
       where: 'username = ? AND password_hash = ? AND is_deleted = 0',
@@ -68,38 +135,110 @@ class AuthService {
       limit: 1,
     );
 
-    if (result.isEmpty) return null;
+    if (result.isNotEmpty) {
+      final user = User.fromMap(result.first);
 
-    final user = User.fromMap(result.first);
-
-    // Firebase is an optional secondary identity check. Local/offline login
-    // remains supported by design, but a successful Firebase login refreshes
-    // the stored UID when necessary.
-    if (user.firebaseEmail != null && user.firebaseEmail!.isNotEmpty) {
-      try {
-        final credential = await _firebaseAuth.signInWithEmailAndPassword(
-          email: user.firebaseEmail!.trim(),
-          password: password,
-        );
-        if (credential.user?.uid != null &&
-            user.firebaseUid != credential.user!.uid) {
-          await db.update(
-            'users',
-            {
-              'firebase_uid': credential.user!.uid,
-              'updated_at': DateTime.now().toIso8601String(),
-              'is_synced': 0,
-            },
-            where: 'id = ? AND is_deleted = 0',
-            whereArgs: [user.id],
+      if (user.firebaseEmail != null && user.firebaseEmail!.isNotEmpty) {
+        try {
+          final credential = await _firebaseAuth.signInWithEmailAndPassword(
+            email: user.firebaseEmail!.trim(),
+            password: password,
           );
+
+          if (credential.user?.uid != null &&
+              user.firebaseUid != credential.user!.uid) {
+            await db.update(
+              'users',
+              {
+                'firebase_uid': credential.user!.uid,
+                'updated_at': DateTime.now().toIso8601String(),
+                'is_synced': 0,
+              },
+              where: 'id = ? AND is_deleted = 0',
+              whereArgs: [user.id],
+            );
+          }
+        } catch (_) {
+          // Local/offline authentication remains supported.
         }
-      } catch (_) {
-        // Offline/local-first authentication is intentional for this app.
       }
+
+      return user;
     }
 
-    return user;
+    // 2. New device: retrieve only safe user metadata from Firestore.
+    try {
+      final snapshot = await _firestore
+          .collection('businesses')
+          .doc(_businessId)
+          .collection('user_directory')
+          .where('username', isEqualTo: cleanUsername)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) return null;
+
+      final remote = snapshot.docs.first.data();
+
+      if (remote['is_deleted'] == true) return null;
+
+      final email = remote['firebase_email']?.toString().trim() ?? '';
+      if (email.isEmpty) return null;
+
+      final credential = await _firebaseAuth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final firebaseUid = credential.user?.uid;
+      if (firebaseUid == null || firebaseUid.isEmpty) return null;
+
+      final permissions = <String, bool>{};
+      final rawPermissions = remote['permissions'];
+
+      if (rawPermissions is Map) {
+        rawPermissions.forEach((key, value) {
+          permissions[key.toString()] = value == true;
+        });
+      }
+
+      final now = DateTime.now().toIso8601String();
+
+      final user = User(
+        syncId: remote['sync_id']?.toString().isNotEmpty == true
+            ? remote['sync_id'].toString()
+            : const Uuid().v4(),
+        firebaseUid: firebaseUid,
+        firebaseEmail: email,
+        username: remote['username']?.toString() ?? cleanUsername,
+        passwordHash: passwordHash,
+        recoveryCodeHash: null,
+        fullName: remote['full_name']?.toString() ?? cleanUsername,
+        role: remote['role']?.toString() ?? 'member',
+        driverId: remote['driver_id'] is num
+            ? (remote['driver_id'] as num).toInt()
+            : int.tryParse(remote['driver_id']?.toString() ?? ''),
+        permissions: permissions,
+        createdAt: remote['created_at']?.toString() ?? now,
+        updatedAt: remote['updated_at']?.toString() ?? now,
+        mustChangePassword: remote['must_change_password'] == true,
+      );
+
+      final localId = await db.insert(
+        'users',
+        user.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      return User.fromMap({
+        ...user.toMap(),
+        'id': localId,
+      });
+    } on firebase_auth.FirebaseAuthException {
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<int> createUser({
@@ -125,7 +264,20 @@ class AuthService {
       throw ArgumentError('الدور غير صالح');
     }
 
+    if (cleanEmail == null || cleanEmail.isEmpty) {
+      throw ArgumentError('بريد Firebase مطلوب');
+    }
+
+    final emailRegex = RegExp(
+      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+    );
+
+    if (!emailRegex.hasMatch(cleanEmail)) {
+      throw ArgumentError('بريد Firebase غير صالح');
+    }
+
     final db = await _dbHelper.database;
+
     final duplicate = await db.query(
       'users',
       columns: ['id'],
@@ -133,20 +285,30 @@ class AuthService {
       whereArgs: [cleanUsername],
       limit: 1,
     );
+
     if (duplicate.isNotEmpty) {
       throw ArgumentError('اسم المستخدم مستخدم بالفعل');
     }
 
-    String? firebaseUid;
-    if (cleanEmail != null && cleanEmail.isNotEmpty) {
-      firebaseUid = await createFirebaseUser(cleanEmail, password);
+    final duplicateEmail = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'LOWER(firebase_email) = LOWER(?) AND is_deleted = 0',
+      whereArgs: [cleanEmail],
+      limit: 1,
+    );
+
+    if (duplicateEmail.isNotEmpty) {
+      throw ArgumentError('بريد Firebase مستخدم بالفعل');
     }
+
+    final firebaseUid = await createFirebaseUser(cleanEmail, password);
 
     final now = DateTime.now().toIso8601String();
     final user = User(
       syncId: const Uuid().v4(),
       firebaseUid: firebaseUid,
-      firebaseEmail: cleanEmail?.isEmpty == true ? null : cleanEmail,
+      firebaseEmail: cleanEmail,
       username: cleanUsername,
       passwordHash: _hashPassword(password),
       fullName: cleanFullName,
@@ -157,7 +319,20 @@ class AuthService {
       updatedAt: now,
     );
 
-    return db.insert('users', user.toMap());
+    final localId = await db.insert('users', user.toMap());
+
+    try {
+      await _publishUserDirectory(user);
+    } catch (e) {
+      await db.delete(
+        'users',
+        where: 'id = ?',
+        whereArgs: [localId],
+      );
+      rethrow;
+    }
+
+    return localId;
   }
 
   Future<bool> updateUser({
@@ -197,13 +372,27 @@ class AuthService {
       where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
-    return count > 0;
+
+    if (count == 0) return false;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return false;
+
+    await _publishUserDirectory(User.fromMap(rows.first));
+    return true;
   }
 
   Future<void> updateDriver(int userId, int? driverId) async {
     PermissionService.requirePermission(PermissionKeys.usersManage);
     final db = await _dbHelper.database;
-    await db.update(
+
+    final count = await db.update(
       'users',
       {
         'driver_id': driverId,
@@ -213,12 +402,25 @@ class AuthService {
       where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
+
+    if (count == 0) return;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return;
+
+    await _publishUserDirectory(User.fromMap(rows.first));
   }
 
   Future<void> updatePermissions(int userId, Map<String, bool> newPermissions) async {
     PermissionService.requirePermission(PermissionKeys.permissionsManage);
     final db = await _dbHelper.database;
-    await db.update(
+    final count = await db.update(
       'users',
       {
         'permissions': User.permissionsToJson(newPermissions),
@@ -228,6 +430,19 @@ class AuthService {
       where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
+
+    if (count == 0) return;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return;
+
+    await _publishUserDirectory(User.fromMap(rows.first));
   }
 
   Future<bool> updateUserPassword({
@@ -263,16 +478,45 @@ class AuthService {
   Future<int> removeDefaultUsers() async {
     PermissionService.requirePermission(PermissionKeys.usersManage);
     final db = await _dbHelper.database;
-    return db.update(
+
+    final usernames = List.generate(10, (index) => 'مستخدم ${index + 1}');
+    final placeholders = List.filled(usernames.length, '?').join(',');
+
+    final rows = await db.query(
+      'users',
+      where: "username IN ($placeholders) AND is_deleted = 0",
+      whereArgs: usernames,
+    );
+
+    if (rows.isEmpty) return 0;
+
+    final now = DateTime.now().toIso8601String();
+
+    final count = await db.update(
       'users',
       {
         'is_deleted': 1,
         'is_synced': 0,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': now,
       },
-      where: "username IN (${List.filled(10, '?').join(',')})",
-      whereArgs: List.generate(10, (index) => 'مستخدم ${index + 1}'),
+      where: "username IN ($placeholders) AND is_deleted = 0",
+      whereArgs: usernames,
     );
+
+    for (final row in rows) {
+      final user = User.fromMap({
+        ...row,
+        'is_deleted': 1,
+        'updated_at': now,
+        'is_synced': 0,
+      });
+
+      if (user.firebaseUid != null && user.firebaseUid!.isNotEmpty) {
+        await _publishUserDirectory(user, isDeleted: true);
+      }
+    }
+
+    return count;
   }
 
   Future<bool> setRecoveryCode({

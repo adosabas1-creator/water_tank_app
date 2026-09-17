@@ -118,10 +118,10 @@ class DashboardScreen extends StatelessWidget {
         builder: (_) => AlertDialog(
           title: const Text('تشخيص قاعدة البيانات'),
           content: SelectableText(
-            'اسم قاعدة البيانات: ${AppConstants.localDbName}\\n'
-            'إصدار قاعدة البيانات الفعلي: $version\\n'
-            'الإصدار المتوقع من التطبيق: ${AppConstants.localDbVersion}\\n'
-            'جدول expenses: ${expensesExists ? 'موجود ✅' : 'غير موجود ❌'}\\n'
+            'اسم قاعدة البيانات: ${AppConstants.localDbName}\n'
+            'إصدار قاعدة البيانات الفعلي: $version\n'
+            'الإصدار المتوقع من التطبيق: ${AppConstants.localDbVersion}\n'
+            'جدول expenses: ${expensesExists ? 'موجود ✅' : 'غير موجود ❌'}\n'
             'عدد سجلات expenses: ${expensesCount ?? 'غير متاح لأن الجدول غير موجود'}',
           ),
           actions: [
@@ -139,7 +139,7 @@ class DashboardScreen extends StatelessWidget {
         context: context,
         builder: (_) => AlertDialog(
           title: const Text('فشل فحص قاعدة البيانات'),
-          content: SelectableText('حدث خطأ أثناء الفحص:\\n$e'),
+          content: SelectableText('حدث خطأ أثناء الفحص:\n$e'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),

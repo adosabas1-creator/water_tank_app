@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sqflite/sqflite.dart';
 import '../database/database_helper.dart';
 import 'connectivity_service.dart';
+import '../auth/permission_service.dart';
+import '../constants/permissions.dart';
 
 class SyncService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -18,6 +20,64 @@ class SyncService {
 
   Future<bool> _ready() async =>
       await _connectivity.isOnline() && _auth.currentUser != null;
+
+  dynamic get _currentUser => PermissionService.currentUser;
+
+  bool _hasPermission(String permissionKey) {
+    return PermissionService.hasPermission(_currentUser, permissionKey);
+  }
+
+  bool _canDownloadTable(String table) {
+    switch (table) {
+      case 'clients':
+        return _hasPermission(PermissionKeys.clientsView) ||
+            _hasPermission(PermissionKeys.salesView) ||
+            _hasPermission(PermissionKeys.clientStatementsView);
+
+      case 'suppliers':
+        return _hasPermission(PermissionKeys.suppliersView) ||
+            _hasPermission(PermissionKeys.salesView) ||
+            _hasPermission(PermissionKeys.supplierStatementsView) ||
+            _hasPermission(PermissionKeys.profitsView);
+
+      case 'drivers':
+        return _hasPermission(PermissionKeys.driversView);
+
+      case 'sales':
+        return _hasPermission(PermissionKeys.salesView) ||
+            _hasPermission(PermissionKeys.profitsView);
+
+      case 'expenses':
+        return _hasPermission(PermissionKeys.profitsView) ||
+            _currentUser?.role == 'admin' ||
+            _currentUser?.role == 'deputy_manager';
+
+      case 'account_transactions':
+        return _hasPermission(PermissionKeys.clientStatementsView) ||
+            _hasPermission(PermissionKeys.supplierStatementsView);
+
+      case 'payments':
+        return _hasPermission(PermissionKeys.clientStatementsView) ||
+            _hasPermission(PermissionKeys.supplierStatementsView);
+
+      case 'purchase_invoices':
+      case 'purchase_items':
+      case 'inventory_layers':
+      case 'sale_inventory_allocations':
+        return _hasPermission(PermissionKeys.profitsView) ||
+            _currentUser?.role == 'admin' ||
+            _currentUser?.role == 'deputy_manager';
+
+      case 'salaries':
+      case 'filling_operations':
+      case 'tanks':
+        return _currentUser?.role == 'admin' ||
+            _currentUser?.role == 'deputy_manager';
+
+      default:
+        return false;
+    }
+  }
 
   Future<List<String>> _columns(Database db, String table) async {
     final rows = await db.rawQuery('PRAGMA table_info($table)');
@@ -145,6 +205,7 @@ class SyncService {
   }
 
   Future<void> _uploadTable(String table) async {
+    if (!_canUploadTable(table)) return;
     if (!await _ready()) return;
     final db = await _dbHelper.database;
     final rows = await db.query(table, where: 'is_synced = 0');
@@ -218,16 +279,48 @@ class SyncService {
       if (!await requireRef('client_sync_id', 'clients', 'client_id')) {
         return null;
       }
-      if (!await requireRef('tank_sync_id', 'tanks', 'tank_id')) return null;
-      if (!await requireRef('driver_sync_id', 'drivers', 'driver_id')) {
-        return null;
-      }
       if (!await requireRef('supplier_sync_id', 'suppliers', 'supplier_id')) {
         return null;
       }
-      if (!await requireRef('created_by_sync_id', 'users', 'created_by')) {
-        return null;
+
+      final creatorSyncId = data['created_by_sync_id']?.toString();
+      if (creatorSyncId != null && creatorSyncId.isNotEmpty) {
+        var creatorId = await _localId(db, 'users', creatorSyncId);
+
+        if (creatorId == null) {
+          final now = DateTime.now().toIso8601String();
+          creatorId = await db.insert(
+            'users',
+            {
+              'username': 'remote_creator_$creatorSyncId',
+              'password_hash':
+                  'remote_${DateTime.now().microsecondsSinceEpoch}',
+              'recovery_code_hash': null,
+              'full_name': data['created_by_name']?.toString() ?? 'مستخدم سابق',
+              'role': 'member',
+              'driver_id': null,
+              'permissions': '{}',
+              'created_at': data['created_at']?.toString() ?? now,
+              'updated_at': data['updated_at']?.toString() ?? now,
+              'is_deleted': 0,
+              'is_synced': 1,
+              'sync_id': creatorSyncId,
+              'firebase_uid': null,
+              'firebase_email': null,
+              'must_change_password': 1,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+
+          if (creatorId == 0) {
+            creatorId = await _localId(db, 'users', creatorSyncId);
+          }
+        }
+
+        if (creatorId == null) return null;
+        data['created_by'] = creatorId;
       }
+
       data.remove('client_sync_id');
       data.remove('tank_sync_id');
       data.remove('driver_sync_id');
@@ -249,9 +342,7 @@ class SyncService {
       if (!await requireRef('created_by_sync_id', 'users', 'created_by')) {
         return null;
       }
-      if (!await requireRef(
-          'purchase_invoice_sync_id',
-          'purchase_invoices',
+      if (!await requireRef('purchase_invoice_sync_id', 'purchase_invoices',
           'purchase_invoice_id')) {
         return null;
       }
@@ -334,7 +425,50 @@ class SyncService {
     return data;
   }
 
+  bool _canUploadTable(String table) {
+    final isManagement =
+        _currentUser?.role == 'admin' || _currentUser?.role == 'deputy_manager';
+
+    switch (table) {
+      case 'clients':
+        return _hasPermission(PermissionKeys.clientsAdd) ||
+            _hasPermission(PermissionKeys.clientsEdit) ||
+            _hasPermission(PermissionKeys.clientsDelete);
+
+      case 'suppliers':
+        return _hasPermission(PermissionKeys.suppliersAdd) ||
+            _hasPermission(PermissionKeys.suppliersEdit) ||
+            _hasPermission(PermissionKeys.suppliersDelete);
+
+      case 'drivers':
+        return _hasPermission(PermissionKeys.driversAdd) ||
+            _hasPermission(PermissionKeys.driversEdit) ||
+            _hasPermission(PermissionKeys.driversDelete);
+
+      case 'sales':
+        return _hasPermission(PermissionKeys.salesAdd) ||
+            _hasPermission(PermissionKeys.salesEdit) ||
+            _hasPermission(PermissionKeys.salesDelete);
+
+      case 'tanks':
+      case 'filling_operations':
+      case 'purchase_invoices':
+      case 'purchase_items':
+      case 'inventory_layers':
+      case 'sale_inventory_allocations':
+      case 'account_transactions':
+      case 'payments':
+      case 'expenses':
+      case 'salaries':
+        return isManagement;
+
+      default:
+        return false;
+    }
+  }
+
   Future<void> _downloadTable(String table) async {
+    if (!_canDownloadTable(table)) return;
     if (!await _ready()) return;
     final db = await _dbHelper.database;
     final snapshot = await _collection(table).get();

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth/user_provider.dart';
+import '../../core/auth/permission_service.dart';
+import '../../core/constants/permissions.dart';
 import '../../models/client.dart';
 import '../../models/sale.dart';
 import '../../models/supplier.dart';
@@ -43,6 +45,15 @@ class _SalesScreenState extends State<SalesScreen> {
   @override
   void initState() {
     super.initState();
+
+    final user = context.read<UserProvider>().currentUser;
+    if (PermissionService.hasPermission(user, PermissionKeys.salesView) == false) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
+      return;
+    }
+
     _loadData();
     _quantityController.addListener(_refreshTotal);
     _priceController.addListener(_refreshTotal);
@@ -163,6 +174,17 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   Future<void> _saveSale() async {
+    final currentUser = context.read<UserProvider>().currentUser;
+    if (PermissionService.hasPermission(
+          currentUser,
+          PermissionKeys.salesAdd,
+        ) == false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ليس لديك صلاحية إضافة المبيعات')),
+      );
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
     final user = context.read<UserProvider>().currentUser;

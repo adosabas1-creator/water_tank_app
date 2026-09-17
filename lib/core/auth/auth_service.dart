@@ -34,6 +34,32 @@ static const String _businessId = 'alborai_water_tank';
 
 
 
+  Future<void> _publishLoginDirectory(
+      User user, {
+        bool isDeleted = false,
+      }) async {
+    final username = user.username.trim();
+    final email = user.firebaseEmail?.trim() ?? '';
+    final uid = user.firebaseUid?.trim() ?? '';
+
+    if (username.isEmpty || email.isEmpty || uid.isEmpty) {
+      throw StateError('بيانات دليل تسجيل الدخول غير مكتملة');
+    }
+
+    await _firestore
+        .collection('businesses')
+        .doc(_businessId)
+        .collection('login_directory')
+        .doc(uid)
+        .set({
+      'username': username,
+      'firebase_email': email,
+      'firebase_uid': uid,
+      'is_deleted': isDeleted,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, SetOptions(merge: true));
+  }
+
   Future<void> _publishUserDirectory(User user, {bool isDeleted = false}) async {
     final data = <String, dynamic>{
       'sync_id': user.syncId,
@@ -190,25 +216,29 @@ static const String _businessId = 'alborai_water_tank';
       return user;
     }
 
-    // 2. New device: retrieve only safe user metadata from Firestore.
+    // 2. New device: bootstrap login from the public login directory.
+    // The device does not have a local account yet, so it cannot read
+    // the protected user_directory until Firebase authentication succeeds.
     try {
-      final snapshot = await _firestore
+      final directorySnapshot = await _firestore
           .collection('businesses')
           .doc(_businessId)
-          .collection('user_directory')
+          .collection('login_directory')
           .where('username', isEqualTo: cleanUsername)
           .limit(1)
           .get();
 
-      if (snapshot.docs.isEmpty) return null;
+      if (directorySnapshot.docs.isEmpty) return null;
 
-      final remote = snapshot.docs.first.data();
+      final directory = directorySnapshot.docs.first.data();
 
-      if (remote['is_deleted'] == true) return null;
+      if (directory['is_deleted'] == true) return null;
 
-      final email = remote['firebase_email']?.toString().trim() ?? '';
+      final email = directory['firebase_email']?.toString().trim() ?? '';
       if (email.isEmpty) return null;
 
+      // Authenticate first. After this succeeds, protected Firestore
+      // collections such as user_directory become readable.
       final credential = await _firebaseAuth.signInWithEmailAndPassword(
         email: email,
         password: password,
@@ -216,6 +246,19 @@ static const String _businessId = 'alborai_water_tank';
 
       final firebaseUid = credential.user?.uid;
       if (firebaseUid == null || firebaseUid.isEmpty) return null;
+
+      // Now read the protected user profile containing role and permissions.
+      final userDoc = await _firestore
+          .collection('businesses')
+          .doc(_businessId)
+          .collection('user_directory')
+          .doc(firebaseUid)
+          .get();
+
+      if (!userDoc.exists) return null;
+
+      final remote = userDoc.data();
+      if (remote == null || remote['is_deleted'] == true) return null;
 
       final permissions = <String, bool>{};
       final rawPermissions = remote['permissions'];
@@ -239,9 +282,11 @@ static const String _businessId = 'alborai_water_tank';
         recoveryCodeHash: null,
         fullName: remote['full_name']?.toString() ?? cleanUsername,
         role: remote['role']?.toString() ?? 'member',
-        driverId: remote['driver_id'] is num
-            ? (remote['driver_id'] as num).toInt()
-            : int.tryParse(remote['driver_id']?.toString() ?? ''),
+
+        // Do not reuse the old device's local driver ID.
+        // Local IDs are different on different phones.
+        driverId: null,
+
         permissions: permissions,
         createdAt: remote['created_at']?.toString() ?? now,
         updatedAt: remote['updated_at']?.toString() ?? now,
@@ -347,6 +392,7 @@ static const String _businessId = 'alborai_water_tank';
 
     try {
       await _publishUserDirectory(user);
+      await _publishLoginDirectory(user);
     } catch (e) {
       await db.delete(
         'users',

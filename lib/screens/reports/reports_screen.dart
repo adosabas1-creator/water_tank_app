@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../services/sale_service.dart';
 import '../../services/expense_service.dart';
+import '../../core/auth/permission_service.dart';
+import '../../core/constants/permissions.dart';
+import 'package:provider/provider.dart';
+import '../../core/auth/user_provider.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -27,6 +31,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   void initState() {
     super.initState();
+
+    final user = context.read<UserProvider>().currentUser;
+    if (!PermissionService.hasPermission(
+      user,
+      PermissionKeys.profitsView,
+    )) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
+      return;
+    }
+
     _loadReport();
   }
 

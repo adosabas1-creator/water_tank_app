@@ -4,6 +4,10 @@ import 'client_statement_screen.dart';
 import 'supplier_statement_screen.dart';
 import '../../services/client_service.dart';
 import '../../services/supplier_service.dart';
+import '../../core/auth/permission_service.dart';
+import '../../core/auth/user_provider.dart';
+import '../../core/constants/permissions.dart';
+import 'package:provider/provider.dart';
 
 class StatementsScreen extends StatefulWidget {
   const StatementsScreen({super.key});
@@ -26,8 +30,57 @@ class _StatementsScreenState extends State<StatementsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = context.read<UserProvider>().currentUser;
+
+    final canViewClients = PermissionService.hasPermission(
+      user,
+      PermissionKeys.clientStatementsView,
+    );
+
+    final canViewSuppliers = PermissionService.hasPermission(
+      user,
+      PermissionKeys.supplierStatementsView,
+    );
+
+    if (!canViewClients && !canViewSuppliers) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('كشوف الحسابات'),
+        ),
+        body: const Center(
+          child: Text(
+            'ليس لديك صلاحية لعرض كشوف الحسابات',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    final tabs = <Tab>[];
+    final views = <Widget>[];
+
+    if (canViewClients) {
+      tabs.add(
+        const Tab(
+          icon: Icon(Icons.people),
+          text: 'العملاء',
+        ),
+      );
+      views.add(_buildClientList());
+    }
+
+    if (canViewSuppliers) {
+      tabs.add(
+        const Tab(
+          icon: Icon(Icons.business),
+          text: 'الموردون',
+        ),
+      );
+      views.add(_buildSupplierList());
+    }
+
     return DefaultTabController(
-      length: 2,
+      length: tabs.length,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('كشوف الحسابات'),
@@ -40,24 +93,12 @@ class _StatementsScreenState extends State<StatementsScreen> {
               icon: const Icon(Icons.refresh),
             ),
           ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(
-                icon: Icon(Icons.people),
-                text: 'العملاء',
-              ),
-              Tab(
-                icon: Icon(Icons.business),
-                text: 'الموردون',
-              ),
-            ],
+          bottom: TabBar(
+            tabs: tabs,
           ),
         ),
         body: TabBarView(
-          children: [
-            _buildClientList(),
-            _buildSupplierList(),
-          ],
+          children: views,
         ),
       ),
     );

@@ -24,11 +24,12 @@ android {
 
     signingConfigs {
         create("release") {
-            if (System.getenv("CI") == "true") {
-                storeFile = file(System.getenv("CM_KEYSTORE_PATH"))
-                storePassword = System.getenv("CM_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("CM_KEY_ALIAS")
-                keyPassword = System.getenv("CM_KEY_PASSWORD")
+            val cmKeystorePath = System.getenv("CM_KEYSTORE_PATH")
+            if (!cmKeystorePath.isNullOrBlank()) {
+                storeFile = file(cmKeystorePath)
+                storePassword = System.getenv("CM_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("CM_KEY_ALIAS") ?: ""
+                keyPassword = System.getenv("CM_KEY_PASSWORD") ?: ""
             }
         }
     }

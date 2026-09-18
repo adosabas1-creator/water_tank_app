@@ -14,8 +14,8 @@ class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
       firebase_auth.FirebaseAuth.instance;
   final DatabaseHelper _dbHelper = DatabaseHelper();
-final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-static const String _businessId = 'alborai_water_tank';
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static const String _businessId = 'alborai_water_tank';
   Future<firebase_auth.FirebaseAuth> _secondaryAuth() async {
     const appName = 'water_tank_secondary_auth';
 
@@ -32,12 +32,10 @@ static const String _businessId = 'alborai_water_tank';
     return firebase_auth.FirebaseAuth.instanceFor(app: app);
   }
 
-
-
   Future<void> _publishLoginDirectory(
-      User user, {
-        bool isDeleted = false,
-      }) async {
+    User user, {
+    bool isDeleted = false,
+  }) async {
     final username = user.username.trim();
     final email = user.firebaseEmail?.trim() ?? '';
     final uid = user.firebaseUid?.trim() ?? '';
@@ -60,7 +58,8 @@ static const String _businessId = 'alborai_water_tank';
     }, SetOptions(merge: true));
   }
 
-  Future<void> _publishUserDirectory(User user, {bool isDeleted = false}) async {
+  Future<void> _publishUserDirectory(User user,
+      {bool isDeleted = false}) async {
     final data = <String, dynamic>{
       'sync_id': user.syncId,
       'firebase_uid': user.firebaseUid,
@@ -68,7 +67,6 @@ static const String _businessId = 'alborai_water_tank';
       'username': user.username,
       'full_name': user.fullName,
       'role': user.role,
-      'driver_id': user.driverId,
       'permissions': user.permissions,
       'created_at': user.createdAt,
       'updated_at': user.updatedAt,
@@ -80,6 +78,25 @@ static const String _businessId = 'alborai_water_tank';
     if (uid == null || uid.isEmpty) {
       throw StateError('لا يمكن نشر المستخدم: Firebase UID غير موجود');
     }
+
+    final db = await _dbHelper.database;
+    String? driverSyncId;
+
+    if (user.driverId != null) {
+      final driverRows = await db.query(
+        'drivers',
+        columns: ['sync_id'],
+        where: 'id = ?',
+        whereArgs: [user.driverId],
+        limit: 1,
+      );
+
+      if (driverRows.isNotEmpty) {
+        driverSyncId = driverRows.first['sync_id']?.toString();
+      }
+    }
+
+    data['driver_sync_id'] = driverSyncId;
 
     if (_firebaseAuth.currentUser == null) {
       throw StateError(
@@ -107,8 +124,7 @@ static const String _businessId = 'alborai_water_tank';
     final secondaryAuth = await _secondaryAuth();
 
     try {
-      final credential =
-          await secondaryAuth.createUserWithEmailAndPassword(
+      final credential = await secondaryAuth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
@@ -141,15 +157,34 @@ static const String _businessId = 'alborai_water_tank';
         case 'invalid-email':
           throw StateError('صيغة البريد الإلكتروني غير صحيحة');
         case 'operation-not-allowed':
-          throw StateError('استعادة كلمة المرور عبر البريد غير مفعلة في Firebase');
+          throw StateError(
+              'استعادة كلمة المرور عبر البريد غير مفعلة في Firebase');
         case 'network-request-failed':
           throw StateError('تعذر الاتصال بخدمة Firebase. تحقق من الإنترنت');
         case 'too-many-requests':
           throw StateError('تمت محاولات كثيرة. حاول مرة أخرى لاحقًا');
         default:
-          throw StateError('تعذر إرسال رابط الاستعادة. رمز Firebase: ${e.code}');
+          throw StateError(
+              'تعذر إرسال رابط الاستعادة. رمز Firebase: ${e.code}');
       }
     }
+  }
+
+  Future<int?> _localDriverIdFromSyncId(
+      Database db, dynamic driverSyncId) async {
+    final syncId = driverSyncId?.toString().trim();
+    if (syncId == null || syncId.isEmpty) return null;
+
+    final rows = await db.query(
+      'drivers',
+      columns: ['id'],
+      where: 'sync_id = ?',
+      whereArgs: [syncId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return null;
+    return (rows.first['id'] as num).toInt();
   }
 
   Future<User?> login(String username, String password) async {
@@ -205,8 +240,7 @@ static const String _businessId = 'alborai_water_tank';
                     'firebase_uid': firebaseUid,
                     'firebase_email': remote['firebase_email']?.toString() ??
                         user.firebaseEmail,
-                    'username':
-                        remote['username']?.toString() ?? user.username,
+                    'username': remote['username']?.toString() ?? user.username,
                     'full_name':
                         remote['full_name']?.toString() ?? user.fullName,
                     'role': remote['role']?.toString() ?? user.role,
@@ -315,9 +349,11 @@ static const String _businessId = 'alborai_water_tank';
         fullName: remote['full_name']?.toString() ?? cleanUsername,
         role: remote['role']?.toString() ?? 'member',
 
-        // Do not reuse the old device's local driver ID.
-        // Local IDs are different on different phones.
-        driverId: null,
+        // Convert the stable Firebase driver sync_id to this device's local driver ID.
+        driverId: await _localDriverIdFromSyncId(
+          db,
+          remote['driver_sync_id'],
+        ),
 
         permissions: permissions,
         createdAt: remote['created_at']?.toString() ?? now,
@@ -519,7 +555,8 @@ static const String _businessId = 'alborai_water_tank';
     await _publishUserDirectory(User.fromMap(rows.first));
   }
 
-  Future<void> updatePermissions(int userId, Map<String, bool> newPermissions) async {
+  Future<void> updatePermissions(
+      int userId, Map<String, bool> newPermissions) async {
     PermissionService.requirePermission(PermissionKeys.permissionsManage);
     final db = await _dbHelper.database;
     final count = await db.update(
@@ -628,7 +665,8 @@ static const String _businessId = 'alborai_water_tank';
     PermissionService.requirePermission(PermissionKeys.usersManage);
     final code = recoveryCode.trim();
     if (code.length < 6) {
-      throw ArgumentError('رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
+      throw ArgumentError(
+          'رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
     }
     final db = await _dbHelper.database;
     final count = await db.update(

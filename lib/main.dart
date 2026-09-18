@@ -19,6 +19,7 @@ import 'screens/purchases/purchases_screen.dart';
 import 'screens/users/users_screen.dart';
 import 'screens/logs/logs_screen.dart';
 import 'services/backup_service.dart';
+import 'core/network/sync_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,7 @@ Future<void> main() async {
   await _initializeFirebase();
   await _initializeDatabase();
   await _runAutomaticBackup();
+  SyncService().startAutoSync();
 
   runApp(
     ChangeNotifierProvider<UserProvider>(

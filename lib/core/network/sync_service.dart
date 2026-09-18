@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,15 +11,40 @@ import '../auth/permission_service.dart';
 import '../constants/permissions.dart';
 
 class SyncService {
+  static final SyncService _instance = SyncService._internal();
+
+  factory SyncService() => _instance;
+
+  SyncService._internal();
+
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final ConnectivityService _connectivity = ConnectivityService();
 
+  StreamSubscription<bool>? _connectivitySubscription;
+  bool _autoSyncStarted = false;
+
   static const String businessId = 'alborai_water_tank';
 
   CollectionReference<Map<String, dynamic>> _collection(String table) =>
       _firestore.collection('businesses').doc(businessId).collection(table);
+
+  void startAutoSync() {
+    if (_autoSyncStarted) return;
+
+    _autoSyncStarted = true;
+
+    _connectivitySubscription =
+        _connectivity.onConnectivityChanged.listen((isOnline) {
+      if (!isOnline) return;
+
+      syncAll();
+    });
+
+    assert(_connectivitySubscription != null);
+    debugPrint('Automatic sync listener started');
+  }
 
   Future<bool> _ready() async =>
       await _connectivity.isOnline() && _auth.currentUser != null;
@@ -42,6 +70,9 @@ class SyncService {
 
       case 'drivers':
         return _hasPermission(PermissionKeys.driversView);
+
+      case 'users':
+        return _hasPermission(PermissionKeys.usersManage);
 
       case 'sales':
         return _hasPermission(PermissionKeys.salesView) ||
@@ -103,7 +134,18 @@ class SyncService {
     final data = Map<String, dynamic>.from(row)..remove('id');
     data.remove('is_synced');
 
-    if (table == 'tanks') {
+    if (table == 'users') {
+      data.remove('password_hash');
+      data.remove('recovery_code_hash');
+      data.remove('driver_id');
+
+      if (row['driver_id'] != null) {
+        data['driver_sync_id'] =
+            await _localSyncId(db, 'drivers', row['driver_id']);
+      } else {
+        data['driver_sync_id'] = null;
+      }
+    } else if (table == 'tanks') {
       data['driver_sync_id'] =
           await _localSyncId(db, 'drivers', row['driver_id']);
       data.remove('driver_id');
@@ -214,7 +256,23 @@ class SyncService {
       if (syncId == null || syncId.isEmpty) continue;
       try {
         final data = await _uploadData(db, table, row);
-        await _collection(table).doc(syncId).set(data, SetOptions(merge: true));
+
+        final collection = table == 'users'
+            ? _firestore
+                .collection('businesses')
+                .doc(businessId)
+                .collection('user_directory')
+            : _collection(table);
+
+        final documentId =
+            table == 'users' ? row['firebase_uid']?.toString() : syncId;
+
+        if (documentId == null || documentId.isEmpty) {
+          debugPrint('$table upload skipped: missing Firebase UID');
+          continue;
+        }
+
+        await collection.doc(documentId).set(data, SetOptions(merge: true));
         final current = await db.query(table,
             columns: ['updated_at'],
             where: 'id = ?',
@@ -255,7 +313,50 @@ class SyncService {
       return true;
     }
 
-    if (table == 'tanks') {
+    if (table == 'users') {
+      if (!await requireRef('driver_sync_id', 'drivers', 'driver_id')) {
+        return null;
+      }
+      data.remove('driver_sync_id');
+
+      final existing = await db.query(
+        'users',
+        where: 'sync_id = ?',
+        whereArgs: [remote['sync_id']],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty) {
+        data['password_hash'] = existing.first['password_hash'];
+        data['recovery_code_hash'] = existing.first['recovery_code_hash'];
+      } else {
+        data['password_hash'] = 'remote_profile_${remote['sync_id']}';
+        data['recovery_code_hash'] = null;
+      }
+
+      final permissions = data['permissions'];
+      if (permissions is Map) {
+        data['permissions'] = jsonEncode(
+          permissions.map(
+            (key, value) => MapEntry(key.toString(), value == true),
+          ),
+        );
+      } else if (permissions == null) {
+        data['permissions'] = '{}';
+      } else {
+        data['permissions'] = permissions.toString();
+      }
+
+      final isDeleted = data['is_deleted'];
+      if (isDeleted is bool) {
+        data['is_deleted'] = isDeleted ? 1 : 0;
+      }
+
+      final mustChangePassword = data['must_change_password'];
+      if (mustChangePassword is bool) {
+        data['must_change_password'] = mustChangePassword ? 1 : 0;
+      }
+    } else if (table == 'tanks') {
       if (!await requireRef('driver_sync_id', 'drivers', 'driver_id')) {
         return null;
       }
@@ -276,10 +377,20 @@ class SyncService {
       data.remove('employee_sync_id');
       data.remove('created_by_sync_id');
     } else if (table == 'sales') {
-      if (!await requireRef('client_sync_id', 'clients', 'client_id')) {
-        return null;
-      }
-      if (!await requireRef('supplier_sync_id', 'suppliers', 'supplier_id')) {
+      // العميل والخزان والسائق اختياريون في جدول المبيعات.
+      // إذا لم يكن المرجع موجودًا على الجهاز الحالي، تبقى المبيعة
+      // صالحة مع قيمة NULL بدل منع تنزيلها بالكامل.
+      await requireRef('client_sync_id', 'clients', 'client_id');
+      await requireRef('tank_sync_id', 'tanks', 'tank_id');
+      await requireRef('driver_sync_id', 'drivers', 'driver_id');
+
+      // المورد إلزامي في قاعدة البيانات، لذلك لا يمكن تنزيل
+      // المبيعة قبل توفر المورد محليًا.
+      if (!await requireRef(
+        'supplier_sync_id',
+        'suppliers',
+        'supplier_id',
+      )) {
         return null;
       }
 
@@ -445,6 +556,9 @@ class SyncService {
             _hasPermission(PermissionKeys.driversEdit) ||
             _hasPermission(PermissionKeys.driversDelete);
 
+      case 'users':
+        return _hasPermission(PermissionKeys.usersManage);
+
       case 'sales':
         return _hasPermission(PermissionKeys.salesAdd) ||
             _hasPermission(PermissionKeys.salesEdit) ||
@@ -471,7 +585,15 @@ class SyncService {
     if (!_canDownloadTable(table)) return;
     if (!await _ready()) return;
     final db = await _dbHelper.database;
-    final snapshot = await _collection(table).get();
+
+    final collection = table == 'users'
+        ? _firestore
+            .collection('businesses')
+            .doc(businessId)
+            .collection('user_directory')
+        : _collection(table);
+
+    final snapshot = await collection.get();
     final columns = await _columns(db, table);
     for (final doc in snapshot.docs) {
       try {
@@ -504,6 +626,7 @@ class SyncService {
   Future<void> syncClients() => _uploadTable('clients');
   Future<void> syncSuppliers() => _uploadTable('suppliers');
   Future<void> syncDrivers() => _uploadTable('drivers');
+  Future<void> syncUsers() => _uploadTable('users');
   Future<void> syncTanks() => _uploadTable('tanks');
   Future<void> syncFillingOperations() => _uploadTable('filling_operations');
   Future<void> syncSales() => _uploadTable('sales');
@@ -512,6 +635,7 @@ class SyncService {
   Future<void> syncSalaries() => _uploadTable('salaries');
 
   Future<void> downloadClients() => _downloadTable('clients');
+  Future<void> downloadUsers() => _downloadTable('users');
   Future<void> downloadTanks() => _downloadTable('tanks');
   Future<void> downloadFillingOperations() =>
       _downloadTable('filling_operations');
@@ -521,34 +645,57 @@ class SyncService {
   Future<void> downloadSalaries() => _downloadTable('salaries');
   Future<void> downloadTable(String tableName) => _downloadTable(tableName);
 
-  Future<void> syncAll() async {
-    if (!await _ready()) return;
-    final db = await _dbHelper.database;
-    try {
-      await db.execute('PRAGMA foreign_keys = ON');
-    } catch (_) {}
+  bool _syncInProgress = false;
 
-    const order = [
-      'suppliers',
-      'clients',
-      'drivers',
-      'tanks',
-      'purchase_invoices',
-      'purchase_items',
-      'inventory_layers',
-      'sales',
-      'sale_inventory_allocations',
-      'account_transactions',
-      'payments',
-      'expenses',
-      'salaries',
-      'filling_operations',
-    ];
-    for (final table in order) {
-      await _uploadTable(table);
+  Future<void> syncAll() async {
+    if (_syncInProgress) {
+      debugPrint('Sync skipped: another sync is already in progress');
+      return;
     }
-    for (final table in order) {
-      await _downloadTable(table);
+
+    if (!await _ready()) return;
+
+    _syncInProgress = true;
+
+    try {
+      final db = await _dbHelper.database;
+
+      try {
+        await db.execute('PRAGMA foreign_keys = ON');
+      } catch (_) {}
+
+      const order = [
+        'suppliers',
+        'clients',
+        'drivers',
+        'users',
+        'tanks',
+        'purchase_invoices',
+        'purchase_items',
+        'inventory_layers',
+        'sales',
+        'sale_inventory_allocations',
+        'account_transactions',
+        'payments',
+        'expenses',
+        'salaries',
+        'filling_operations',
+      ];
+
+      for (final table in order) {
+        await _uploadTable(table);
+      }
+
+      for (final table in order) {
+        await _downloadTable(table);
+      }
+
+      debugPrint('Sync completed successfully');
+    } catch (e, stackTrace) {
+      debugPrint('Sync failed: $e');
+      debugPrint('$stackTrace');
+    } finally {
+      _syncInProgress = false;
     }
   }
 }

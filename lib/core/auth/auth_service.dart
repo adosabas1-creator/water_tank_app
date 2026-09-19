@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
@@ -713,14 +712,14 @@ class AuthService {
       throw StateError('حساب المستخدم غير مرتبط بـ Firebase');
     }
 
+    final firebaseEmail =
+        currentFirebaseUser?.email?.trim().toLowerCase();
     final isSelf =
-        currentFirebaseUser != null &&
-        (currentFirebaseUser.email?.trim().toLowerCase() ==
-            targetEmail.toLowerCase());
+        firebaseEmail != null && firebaseEmail == targetEmail.toLowerCase();
 
     // المستخدم يغيّر كلمة مروره بنفسه.
     // يجب نجاح Firebase أولًا، وبعدها فقط نحدّث SQLite.
-    if (isSelf && currentFirebaseUser != null) {
+    if (isSelf) {
       try {
         if (currentPassword != null && currentPassword.isNotEmpty) {
           final cred = firebase_auth.EmailAuthProvider.credential(

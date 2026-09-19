@@ -31,6 +31,7 @@ service cloud.firestore {
       return signedIn() &&
         (
           userDoc().data.role == 'admin' ||
+          userDoc().data.role == 'deputy_manager' ||
           userDoc().data.get('permissions', {}).get(permission, false) == true
         );
     }

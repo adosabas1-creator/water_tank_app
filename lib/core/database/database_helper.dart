@@ -389,50 +389,324 @@ class DatabaseHelper {
     }
   }
 
-  /// يفحص الجداول الأساسية وينشئها إن كانت مفقودة.
+  /// يفحص كل الجداول الأساسية وينشئها إن كانت مفقودة.
   /// يعمل بغض النظر عن إصدار قاعدة البيانات الحالي.
   Future<void> _ensureCoreTables(Database db) async {
-    // كل CREATE TABLE في onCreate
-    final tables = <String>[
-      'users', 'clients', 'suppliers', 'drivers', 'tanks',
-      'filling_operations', 'sales', 'payments', 'account_transactions',
-      'purchase_invoices', 'purchase_items', 'inventory_layers',
-      'sale_inventory_allocations', 'expenses', 'salaries', 'operation_logs',
-    ];
-
-    for (final table in tables) {
-      try {
-        final rows = await db.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-          [table],
-        );
-        if (rows.isEmpty) {
-          debugPrint('Table $table missing — creating it now');
-
-          if (table == 'expenses') {
-            await db.execute('''
-              CREATE TABLE IF NOT EXISTS expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                expense_type TEXT NOT NULL,
-                amount REAL NOT NULL,
-                expense_date TEXT NOT NULL,
-                notes TEXT,
-                created_by INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                is_deleted INTEGER DEFAULT 0,
-                is_synced INTEGER DEFAULT 0,
-                sync_id TEXT UNIQUE NOT NULL,
-                FOREIGN KEY (created_by) REFERENCES users (id)
-              )
-            ''');
-            debugPrint('Table expenses created successfully');
-          }
-          // يمكن إضافة جداول أخرى لاحقًا
-        }
-      } catch (e) {
-        debugPrint('Error ensuring table $table: $e');
+    final existing = <String>{};
+    try {
+      final rows = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table'",
+      );
+      for (final row in rows) {
+        existing.add(row['name'].toString());
       }
+    } catch (e) {
+      debugPrint('Error listing tables: $e');
+      return;
+    }
+
+    debugPrint('Existing tables: $existing');
+
+    // كل جدول: (الاسم، كود الإنشاء)
+    final tablesToCheck = <String, String>{
+
+      'users': '''
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          firebase_uid TEXT,
+          firebase_email TEXT,
+          username TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          recovery_code_hash TEXT,
+          full_name TEXT NOT NULL,
+          role TEXT NOT NULL,
+          driver_id INTEGER,
+          permissions TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          must_change_password INTEGER DEFAULT 0,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'clients': '''
+        CREATE TABLE IF NOT EXISTS clients (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          phone TEXT,
+          address TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'suppliers': '''
+        CREATE TABLE IF NOT EXISTS suppliers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          phone TEXT,
+          address TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'drivers': '''
+        CREATE TABLE IF NOT EXISTS drivers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          phone TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'tanks': '''
+        CREATE TABLE IF NOT EXISTS tanks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          capacity INTEGER,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'filling_operations': '''
+        CREATE TABLE IF NOT EXISTS filling_operations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          operation_number TEXT UNIQUE,
+          tank_id INTEGER,
+          supplier_id INTEGER NOT NULL,
+          units INTEGER NOT NULL,
+          purchase_price REAL NOT NULL,
+          operation_date TEXT NOT NULL,
+          employee_id INTEGER,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'sales': '''
+        CREATE TABLE IF NOT EXISTS sales (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          customer_id INTEGER,
+          driver_id INTEGER,
+          tank_id INTEGER,
+          quantity INTEGER NOT NULL,
+          unit_price REAL NOT NULL,
+          total_amount REAL NOT NULL,
+          paid_amount REAL DEFAULT 0,
+          sale_date TEXT NOT NULL,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'payments': '''
+        CREATE TABLE IF NOT EXISTS payments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          client_id INTEGER,
+          supplier_id INTEGER,
+          amount REAL NOT NULL,
+          payment_type TEXT NOT NULL,
+          payment_date TEXT NOT NULL,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'account_transactions': '''
+        CREATE TABLE IF NOT EXISTS account_transactions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          account_type TEXT NOT NULL,
+          account_id INTEGER NOT NULL,
+          transaction_type TEXT NOT NULL,
+          amount REAL NOT NULL,
+          description TEXT,
+          reference_type TEXT,
+          reference_id INTEGER,
+          transaction_date TEXT NOT NULL,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'purchase_invoices': '''
+        CREATE TABLE IF NOT EXISTS purchase_invoices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          supplier_id INTEGER,
+          invoice_number TEXT,
+          total_amount REAL NOT NULL,
+          paid_amount REAL DEFAULT 0,
+          purchase_date TEXT NOT NULL,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'purchase_items': '''
+        CREATE TABLE IF NOT EXISTS purchase_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          invoice_id INTEGER NOT NULL,
+          item_type TEXT NOT NULL,
+          item_id INTEGER,
+          quantity INTEGER NOT NULL,
+          unit_price REAL NOT NULL,
+          total_price REAL NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'inventory_layers': '''
+        CREATE TABLE IF NOT EXISTS inventory_layers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          item_type TEXT NOT NULL,
+          item_id INTEGER,
+          original_units INTEGER NOT NULL,
+          remaining_units INTEGER NOT NULL,
+          unit_cost REAL NOT NULL,
+          layer_date TEXT NOT NULL,
+          reference_type TEXT,
+          reference_id INTEGER,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'sale_inventory_allocations': '''
+        CREATE TABLE IF NOT EXISTS sale_inventory_allocations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          sale_id INTEGER NOT NULL,
+          layer_id INTEGER NOT NULL,
+          units INTEGER NOT NULL,
+          unit_cost REAL NOT NULL,
+          total_cost REAL NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'expenses': '''
+        CREATE TABLE IF NOT EXISTS expenses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          expense_type TEXT NOT NULL,
+          amount REAL NOT NULL,
+          expense_date TEXT NOT NULL,
+          notes TEXT,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          sync_id TEXT UNIQUE NOT NULL
+        )
+      ''',
+
+      'salaries': '''
+        CREATE TABLE IF NOT EXISTS salaries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          employee_id INTEGER NOT NULL,
+          month TEXT NOT NULL,
+          base_salary REAL NOT NULL,
+          advances REAL DEFAULT 0,
+          deductions REAL DEFAULT 0,
+          net_salary REAL NOT NULL,
+          payment_date TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+
+      'operation_logs': '''
+        CREATE TABLE IF NOT EXISTS operation_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          user_id INTEGER NOT NULL,
+          operation_type TEXT NOT NULL,
+          table_name TEXT,
+          record_id INTEGER,
+          details TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0
+        )
+      ''',
+    };
+
+    int created = 0;
+    for (final entry in tablesToCheck.entries) {
+      final tableName = entry.key;
+      if (!existing.contains(tableName)) {
+        try {
+          await db.execute(entry.value);
+          debugPrint('✅ Table created: $tableName');
+          created++;
+        } catch (e) {
+          debugPrint('❌ Failed to create $tableName: $e');
+        }
+      }
+    }
+
+    if (created > 0) {
+      debugPrint('✅ Created $created missing tables');
+    } else {
+      debugPrint('✅ All tables exist');
     }
   }
 

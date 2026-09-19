@@ -4,34 +4,222 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================================
-    // login_directory: يسمح للجهاز الجديد بالبحث عن بريد المستخدم
-    // قبل تسجيل الدخول في Firebase Auth.
-    // - allow get:  ✅ قراءة مستند واحد بمعرّفه (username)
-    // - allow list: ❌ منع سرد كل المستخدمين (حماية من التسريب)
+    // Helpers
+    // ============================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(
+        /databases/$(database)/documents/businesses/alborai_water_tank/user_directory/$(request.auth.uid)
+      );
+    }
+
+    function isAdmin() {
+      return signedIn() && userDoc().data.role == 'admin';
+    }
+
+    function isManagement() {
+      return signedIn() &&
+        (userDoc().data.role == 'admin' ||
+         userDoc().data.role == 'deputy_manager');
+    }
+
+    function hasPermission(permission) {
+      return signedIn() &&
+        (
+          userDoc().data.role == 'admin' ||
+          userDoc().data.get('permissions', {}).get(permission, false) == true
+        );
+    }
+
+    // ============================================================
+    // login_directory
+    //
+    // مطلوب قبل تسجيل الدخول من جهاز جديد، لذلك يسمح GET فقط.
+    // LIST ممنوع حتى لا يمكن سرد أسماء المستخدمين.
+    //
+    // الكتابة:
+    // - المدير يستطيع الإدارة.
+    // - المستخدم يستطيع تحديث سجله فقط، وبنفس Firebase UID/email.
     // ============================================================
     match /businesses/alborai_water_tank/login_directory/{username} {
       allow get: if true;
       allow list: if false;
-      allow write: if request.auth != null;
+
+      allow create: if isAdmin() ||
+        (
+          signedIn() &&
+          request.resource.data.get('username', '') == username &&
+          request.resource.data.get('firebase_uid', '') == request.auth.uid &&
+          request.resource.data.get('firebase_email', '') ==
+            request.auth.token.email
+        );
+
+      allow update: if isAdmin() ||
+        (
+          signedIn() &&
+          resource.data.get('firebase_uid', '') == request.auth.uid &&
+          request.resource.data.get('firebase_uid', '') == request.auth.uid &&
+          request.resource.data.get('username', '') == username &&
+          request.resource.data.get('firebase_email', '') ==
+            request.auth.token.email
+        );
+
+      allow delete: if isAdmin() ||
+        (
+          signedIn() &&
+          resource.data.get('firebase_uid', '') == request.auth.uid
+        );
     }
 
     // ============================================================
-    // user_directory: يحتوي بيانات المستخدم الكاملة (role, permissions)
-    // يُقرأ فقط بعد تسجيل الدخول في Firebase Auth.
+    // user_directory
+    //
+    // المستخدم يقرأ ملفه فقط.
+    // المدير يستطيع قراءة جميع المستخدمين لإدارة الحسابات.
+    // الكتابة للمدير فقط.
     // ============================================================
     match /businesses/alborai_water_tank/user_directory/{userId} {
-      allow read, write: if request.auth != null;
+      allow get: if signedIn() &&
+        (userId == request.auth.uid || isAdmin());
+
+      allow list: if isAdmin();
+
+      allow create, update, delete: if isAdmin();
     }
 
     // ============================================================
-    // بقية بيانات الشركة: قراءة/كتابة لأي مستخدم مسجّل
-    // (السائقون يرون كل شيء داخل شركتهم، طبيعي)
+    // Clients
     // ============================================================
-    match /businesses/alborai_water_tank/{collection}/{document=**} {
-      allow read, write: if request.auth != null;
+    match /businesses/alborai_water_tank/clients/{document} {
+      allow read: if
+        hasPermission('clients_view') ||
+        hasPermission('sales_view') ||
+        hasPermission('client_statements_view');
+
+      allow create: if hasPermission('clients_add');
+      allow update: if hasPermission('clients_edit');
+      allow delete: if hasPermission('clients_delete');
     }
 
-    // ❌ رفض أي شيء آخر
+    // ============================================================
+    // Suppliers
+    // ============================================================
+    match /businesses/alborai_water_tank/suppliers/{document} {
+      allow read: if
+        hasPermission('suppliers_view') ||
+        hasPermission('sales_view') ||
+        hasPermission('supplier_statements_view') ||
+        hasPermission('profits_view');
+
+      allow create: if hasPermission('suppliers_add');
+      allow update: if hasPermission('suppliers_edit');
+      allow delete: if hasPermission('suppliers_delete');
+    }
+
+    // ============================================================
+    // Drivers
+    // ============================================================
+    match /businesses/alborai_water_tank/drivers/{document} {
+      allow read: if hasPermission('drivers_view');
+
+      allow create: if hasPermission('drivers_add');
+      allow update: if hasPermission('drivers_edit');
+      allow delete: if hasPermission('drivers_delete');
+    }
+
+    // ============================================================
+    // Sales
+    // ============================================================
+    match /businesses/alborai_water_tank/sales/{document} {
+      allow read: if
+        hasPermission('sales_view') ||
+        hasPermission('profits_view');
+
+      allow create: if hasPermission('sales_add');
+      allow update: if hasPermission('sales_edit');
+      allow delete: if hasPermission('sales_delete');
+    }
+
+    // ============================================================
+    // Financial / management data
+    // ============================================================
+
+    match /businesses/alborai_water_tank/expenses/{document} {
+      allow read: if
+        hasPermission('profits_view') || isManagement();
+
+      allow write: if isManagement();
+    }
+
+    match /businesses/alborai_water_tank/salaries/{document} {
+      allow read, write: if isManagement();
+    }
+
+    match /businesses/alborai_water_tank/payments/{document} {
+      allow read: if
+        hasPermission('client_statements_view') ||
+        hasPermission('supplier_statements_view');
+
+      allow write: if isManagement();
+    }
+
+    match /businesses/alborai_water_tank/account_transactions/{document} {
+      allow read: if
+        hasPermission('client_statements_view') ||
+        hasPermission('supplier_statements_view');
+
+      allow write: if isManagement();
+    }
+
+    // ============================================================
+    // Inventory / purchasing / filling
+    // ============================================================
+
+    match /businesses/alborai_water_tank/tanks/{document} {
+      allow read, write: if isManagement();
+    }
+
+    match /businesses/alborai_water_tank/filling_operations/{document} {
+      allow read, write: if isManagement();
+    }
+
+    match /businesses/alborai_water_tank/purchase_invoices/{document} {
+      allow read: if
+        hasPermission('profits_view') || isManagement();
+
+      allow write: if isManagement();
+    }
+
+    match /businesses/alborai_water_tank/purchase_items/{document} {
+      allow read: if
+        hasPermission('profits_view') || isManagement();
+
+      allow write: if isManagement();
+    }
+
+    match /businesses/alborai_water_tank/inventory_layers/{document} {
+      allow read: if
+        hasPermission('profits_view') || isManagement();
+
+      allow write: if isManagement();
+    }
+
+    match /businesses/alborai_water_tank/sale_inventory_allocations/{document} {
+      allow read: if
+        hasPermission('profits_view') || isManagement();
+
+      allow write: if isManagement();
+    }
+
+    // ============================================================
+    // أي مجموعة فرعية غير معرّفة أعلاه لا تحصل على صلاحية تلقائية.
+    // ============================================================
+
+    // ❌ رفض كل شيء آخر
     match /{document=**} {
       allow read, write: if false;
     }

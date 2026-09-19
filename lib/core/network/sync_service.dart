@@ -613,11 +613,47 @@ class SyncService {
         final existing = await db.query(table,
             where: 'sync_id = ?', whereArgs: [syncId], limit: 1);
         if (existing.isNotEmpty && !_remoteIsNewer(existing.first, remote)) {
+          if (table == 'suppliers' || table == 'clients') {
+            debugPrint(
+              '$table DOWNLOAD SKIPPED: already exists sync_id=$syncId',
+            );
+          }
           continue;
         }
-        if (existing.isEmpty && remote['updated_at'] == null) continue;
+        if (existing.isEmpty && remote['updated_at'] == null) {
+          if (table == 'suppliers' || table == 'clients') {
+            debugPrint(
+              '$table DOWNLOAD SKIPPED: missing updated_at sync_id=$syncId',
+            );
+          }
+          continue;
+        }
+
+        if (table == 'suppliers' || table == 'clients') {
+          debugPrint(
+            '$table DOWNLOAD FOUND: sync_id=$syncId '
+            'name=${remote['name']} '
+            'number=${remote['supplier_number'] ?? remote['client_number']}',
+          );
+        }
+
         final data = await _downloadData(db, table, remote);
-        if (data == null) continue;
+
+        if (data == null) {
+          if (table == 'suppliers' || table == 'clients') {
+            debugPrint(
+              '$table DOWNLOAD REJECTED: sync_id=$syncId '
+              'name=${remote['name']}',
+            );
+          }
+          continue;
+        }
+
+        if (table == 'suppliers' || table == 'clients') {
+          debugPrint(
+            '$table DOWNLOAD READY FOR DB: sync_id=$syncId data=$data',
+          );
+        }
         data.removeWhere((key, _) => !columns.contains(key));
         try {
           if (existing.isEmpty) {

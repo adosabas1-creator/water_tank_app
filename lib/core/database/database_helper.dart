@@ -369,6 +369,10 @@ class DatabaseHelper {
         FOREIGN KEY (user_id) REFERENCES users (id)
       )
     ''');
+
+    // فحص نهائي بعد الإنشاء: يضمن وجود أي جدول أساسي مفقود حتى لو
+    // تغيّر ترتيب الإنشاء أو كان هناك اختلاف في نسخة قاعدة البيانات.
+    await _ensureCoreTables(db);
   }
 
   /// تصفير البيانات التشغيلية فقط.

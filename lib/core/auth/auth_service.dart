@@ -712,12 +712,11 @@ class AuthService {
       throw StateError('حساب المستخدم غير مرتبط بـ Firebase');
     }
 
+    // تغيير كلمة المرور مسموح للحساب الحالي فقط من تطبيق العميل.
+    // يجب نجاح Firebase أولًا، وبعدها فقط نحدّث SQLite.
     if (currentFirebaseUser == null ||
         currentFirebaseUser.email?.trim().toLowerCase() !=
             targetEmail.toLowerCase()) {
-      // المدير لا يستطيع من تطبيق العميل تغيير كلمة مرور حساب Firebase
-      // لمستخدم آخر مباشرة. إرسال رابط الاستعادة لا يعني أن كلمة المرور
-      // الجديدة قد أصبحت فعالة، لذلك لا نغيّر SQLite هنا.
       PermissionService.requirePermission(PermissionKeys.usersManage);
       throw StateError(
         'لا يمكن للمدير تعيين كلمة مرور مستخدم آخر مباشرة من التطبيق. '
@@ -725,8 +724,6 @@ class AuthService {
       );
     }
 
-    // المستخدم يغيّر كلمة مروره بنفسه.
-    // يجب نجاح Firebase أولًا، وبعدها فقط نحدّث SQLite.
     try {
       if (currentPassword != null && currentPassword.isNotEmpty) {
         final cred = firebase_auth.EmailAuthProvider.credential(
@@ -758,35 +755,24 @@ class AuthService {
           );
       }
     } catch (e) {
-      if (e is StateError) rethrow;
       throw StateError(
         'تعذر تغيير كلمة المرور في Firebase. لم يتم تغيير كلمة المرور المحلية.',
       );
     }
 
     final count = await db.update(
-        'users',
-        {
-          'password_hash': _hashPassword(newPassword),
-          'must_change_password': 0,
-          'updated_at': DateTime.now().toIso8601String(),
-          'is_synced': 0,
-        },
-        where: 'id = ? AND is_deleted = 0',
-        whereArgs: [userId],
-      );
-
-      return count > 0;
-    }
-
-    // المدير لا يستطيع من تطبيق العميل تغيير كلمة مرور حساب Firebase
-    // لمستخدم آخر مباشرة. إرسال رابط الاستعادة لا يعني أن كلمة المرور
-    // الجديدة قد أصبحت فعالة، لذلك لا نغيّر SQLite هنا.
-    PermissionService.requirePermission(PermissionKeys.usersManage);
-    throw StateError(
-      'لا يمكن للمدير تعيين كلمة مرور مستخدم آخر مباشرة من التطبيق. '
-      'استخدم رابط استعادة كلمة المرور؛ لم يتم تغيير كلمة المرور المحلية.',
+      'users',
+      {
+        'password_hash': _hashPassword(newPassword),
+        'must_change_password': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
     );
+
+    return count > 0;
   }
 
   Future<List<User>> getAllUsers() async {

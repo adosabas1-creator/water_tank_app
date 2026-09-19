@@ -1468,7 +1468,7 @@ class DatabaseHelper {
 
     // الإصدار 28: فحص شامل وإنشاء أي جدول أساسي مفقود.
     // يعمل بعد جميع ترقيات الإصدارات السابقة.
-    if (oldVersion < 28) {
+    if (oldVersion < 29) {
       await _ensureCoreTables(db);
     }
   }

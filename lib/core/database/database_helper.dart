@@ -234,8 +234,10 @@ class DatabaseHelper {
         sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
         FOREIGN KEY (created_by) REFERENCES users (id)
-      );
+      )
+    ''');
 
+    await db.execute('''
       CREATE TABLE purchase_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         purchase_invoice_id INTEGER NOT NULL,
@@ -249,8 +251,10 @@ class DatabaseHelper {
         is_synced INTEGER DEFAULT 0,
         sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (purchase_invoice_id) REFERENCES purchase_invoices (id)
-      );
+      )
+    ''');
 
+    await db.execute('''
       CREATE TABLE inventory_layers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         purchase_item_id INTEGER NOT NULL,
@@ -265,17 +269,25 @@ class DatabaseHelper {
         is_synced INTEGER DEFAULT 0,
         sync_id TEXT UNIQUE NOT NULL,
         FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id)
-      );
+      )
+    ''');
 
+    await db.execute('''
       CREATE INDEX idx_purchase_invoices_supplier
-        ON purchase_invoices (supplier_id, purchase_date);
+      ON purchase_invoices (supplier_id, purchase_date)
+    ''');
 
+    await db.execute('''
       CREATE INDEX idx_purchase_items_invoice
-        ON purchase_items (purchase_invoice_id);
+      ON purchase_items (purchase_invoice_id)
+    ''');
 
+    await db.execute('''
       CREATE INDEX idx_inventory_layers_fifo
-        ON inventory_layers (item_type, layer_date, id);
+      ON inventory_layers (item_type, layer_date, id)
+    ''');
 
+    await db.execute('''
       CREATE TABLE sale_inventory_allocations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         sale_id INTEGER NOT NULL,
@@ -294,16 +306,21 @@ class DatabaseHelper {
         FOREIGN KEY (inventory_layer_id) REFERENCES inventory_layers (id),
         FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id),
         FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
-      );
+      )
+    ''');
 
+    await db.execute('''
       CREATE INDEX idx_sale_inventory_allocations_sale
-        ON sale_inventory_allocations (sale_id);
+      ON sale_inventory_allocations (sale_id)
+    ''');
 
+    await db.execute('''
       CREATE INDEX idx_sale_inventory_allocations_supplier
-        ON sale_inventory_allocations (supplier_id, created_at);
+      ON sale_inventory_allocations (supplier_id, created_at)
+    ''');
 
+    await db.execute('''
       CREATE TABLE expenses (
-
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         expense_type TEXT NOT NULL,
         amount REAL NOT NULL,
@@ -318,7 +335,6 @@ class DatabaseHelper {
         FOREIGN KEY (created_by) REFERENCES users (id)
       )
     ''');
-
     await db.execute('''
       CREATE TABLE salaries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -409,7 +409,6 @@ class DatabaseHelper {
 
     // كل جدول: (الاسم، كود الإنشاء)
     final tablesToCheck = <String, String>{
-
       'users': '''
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -430,7 +429,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'clients': '''
         CREATE TABLE IF NOT EXISTS clients (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -445,7 +443,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'suppliers': '''
         CREATE TABLE IF NOT EXISTS suppliers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -460,7 +457,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'drivers': '''
         CREATE TABLE IF NOT EXISTS drivers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -474,7 +470,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'tanks': '''
         CREATE TABLE IF NOT EXISTS tanks (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -488,7 +483,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'filling_operations': '''
         CREATE TABLE IF NOT EXISTS filling_operations (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -508,7 +502,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'sales': '''
         CREATE TABLE IF NOT EXISTS sales (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -529,7 +522,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'payments': '''
         CREATE TABLE IF NOT EXISTS payments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -547,7 +539,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'account_transactions': '''
         CREATE TABLE IF NOT EXISTS account_transactions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -567,7 +558,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'purchase_invoices': '''
         CREATE TABLE IF NOT EXISTS purchase_invoices (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -585,7 +575,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'purchase_items': '''
         CREATE TABLE IF NOT EXISTS purchase_items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -602,7 +591,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'inventory_layers': '''
         CREATE TABLE IF NOT EXISTS inventory_layers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -621,7 +609,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'sale_inventory_allocations': '''
         CREATE TABLE IF NOT EXISTS sale_inventory_allocations (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -637,7 +624,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'expenses': '''
         CREATE TABLE IF NOT EXISTS expenses (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -653,7 +639,6 @@ class DatabaseHelper {
           sync_id TEXT UNIQUE NOT NULL
         )
       ''',
-
       'salaries': '''
         CREATE TABLE IF NOT EXISTS salaries (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -671,7 +656,6 @@ class DatabaseHelper {
           is_synced INTEGER DEFAULT 0
         )
       ''',
-
       'operation_logs': '''
         CREATE TABLE IF NOT EXISTS operation_logs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -731,10 +715,6 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
-    if (oldVersion < 27) {
-      await _ensureCoreTables(db);
-    }
-
     // ✅ إصلاح: إنشاء expenses إن كانت مفقودة
     if (oldVersion < 27) {
       final tables = await db.rawQuery(
@@ -792,7 +772,8 @@ class DatabaseHelper {
       final tankIsNotNull = tankColumn['notnull'] == 1;
 
       if (tankIsNotNull) {
-        await _safeExec(db, 'ALTER TABLE filling_operations RENAME TO filling_operations_old');
+        await _safeExec(db,
+            'ALTER TABLE filling_operations RENAME TO filling_operations_old');
 
         await db.execute('''
           CREATE TABLE filling_operations (
@@ -877,15 +858,18 @@ class DatabaseHelper {
       );
 
       if (!hasClientPaymentStatus) {
-        await _safeExec(db, 'ALTER TABLE sales ADD COLUMN client_payment_status TEXT');
+        await _safeExec(
+            db, 'ALTER TABLE sales ADD COLUMN client_payment_status TEXT');
       }
 
       if (!hasSupplierPaymentStatus) {
-        await _safeExec(db, 'ALTER TABLE sales ADD COLUMN supplier_payment_status TEXT');
+        await _safeExec(
+            db, 'ALTER TABLE sales ADD COLUMN supplier_payment_status TEXT');
       }
 
       if (!hasCreatedByName) {
-        await _safeExec(db, 'ALTER TABLE sales ADD COLUMN created_by_name TEXT');
+        await _safeExec(
+            db, 'ALTER TABLE sales ADD COLUMN created_by_name TEXT');
       }
     }
 
@@ -1021,7 +1005,8 @@ class DatabaseHelper {
       );
 
       if (!hasMustChangePassword) {
-        await _safeExec(db, 'ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
+        await _safeExec(db,
+            'ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
       }
     }
 
@@ -1063,7 +1048,8 @@ class DatabaseHelper {
       );
 
       if (!hasRecoveryCodeHash) {
-        await _safeExec(db, 'ALTER TABLE users ADD COLUMN recovery_code_hash TEXT');
+        await _safeExec(
+            db, 'ALTER TABLE users ADD COLUMN recovery_code_hash TEXT');
       }
     }
 
@@ -1192,7 +1178,8 @@ class DatabaseHelper {
       );
 
       if (!hasOperationSyncId) {
-        await _safeExec(db, 'ALTER TABLE filling_operations ADD COLUMN sync_id TEXT');
+        await _safeExec(
+            db, 'ALTER TABLE filling_operations ADD COLUMN sync_id TEXT');
 
         final operationRows = await db.query(
           'filling_operations',
@@ -1453,8 +1440,16 @@ class DatabaseHelper {
     }
 
     if (oldVersion < 27) {
-      await _safeExec(db, 'ALTER TABLE payments ADD COLUMN payment_method TEXT');
-      await _safeExec(db, 'ALTER TABLE payments ADD COLUMN reference_number TEXT');
+      await _safeExec(
+          db, 'ALTER TABLE payments ADD COLUMN payment_method TEXT');
+      await _safeExec(
+          db, 'ALTER TABLE payments ADD COLUMN reference_number TEXT');
+    }
+
+    // الإصدار 28: فحص شامل وإنشاء أي جدول أساسي مفقود.
+    // يعمل بعد جميع ترقيات الإصدارات السابقة.
+    if (oldVersion < 28) {
+      await _ensureCoreTables(db);
     }
   }
 }

@@ -713,12 +713,12 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
-    if (oldVersion < 25) {
+    if (oldVersion < 27) {
       await _ensureCoreTables(db);
     }
 
     // ✅ إصلاح: إنشاء expenses إن كانت مفقودة
-    if (oldVersion < 24) {
+    if (oldVersion < 27) {
       final tables = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='expenses'",
       );
@@ -742,7 +742,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 23) {
+    if (oldVersion < 27) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS expenses (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -761,7 +761,7 @@ class DatabaseHelper {
       ''');
     }
 
-    if (oldVersion < 17) {
+    if (oldVersion < 27) {
       final fillingColumns = await db.rawQuery(
         'PRAGMA table_info(filling_operations)',
       );
@@ -843,7 +843,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 16) {
+    if (oldVersion < 27) {
       final salesColumns = await db.rawQuery(
         'PRAGMA table_info(sales)',
       );
@@ -879,7 +879,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 15) {
+    if (oldVersion < 27) {
       final salesColumns = await db.rawQuery(
         'PRAGMA table_info(sales)',
       );
@@ -951,7 +951,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 14) {
+    if (oldVersion < 27) {
       final clientColumns = await db.rawQuery(
         'PRAGMA table_info(clients)',
       );
@@ -977,7 +977,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 11) {
+    if (oldVersion < 27) {
       final userColumns = await db.rawQuery(
         'PRAGMA table_info(users)',
       );
@@ -1008,7 +1008,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 13) {
+    if (oldVersion < 27) {
       final userColumns = await db.rawQuery(
         'PRAGMA table_info(users)',
       );
@@ -1023,7 +1023,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 12) {
+    if (oldVersion < 27) {
       final userColumns = await db.rawQuery(
         'PRAGMA table_info(users)',
       );
@@ -1047,7 +1047,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 2) {
+    if (oldVersion < 27) {
       final columns = await db.rawQuery('PRAGMA table_info(users)');
       final hasDriverId = columns.any(
         (column) => column['name'] == 'driver_id',
@@ -1060,7 +1060,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 3) {
+    if (oldVersion < 27) {
       final columns = await db.rawQuery('PRAGMA table_info(users)');
       final hasRecoveryCodeHash = columns.any(
         (column) => column['name'] == 'recovery_code_hash',
@@ -1073,7 +1073,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 10) {
+    if (oldVersion < 27) {
       final salaryColumns = await db.rawQuery(
         'PRAGMA table_info(salaries)',
       );
@@ -1104,7 +1104,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 9) {
+    if (oldVersion < 27) {
       final expenseColumns = await db.rawQuery(
         'PRAGMA table_info(expenses)',
       );
@@ -1135,7 +1135,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 8) {
+    if (oldVersion < 27) {
       final paymentColumns = await db.rawQuery(
         'PRAGMA table_info(payments)',
       );
@@ -1166,7 +1166,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 7) {
+    if (oldVersion < 27) {
       final saleColumns = await db.rawQuery(
         'PRAGMA table_info(sales)',
       );
@@ -1197,7 +1197,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 6) {
+    if (oldVersion < 27) {
       final operationColumns = await db.rawQuery(
         'PRAGMA table_info(filling_operations)',
       );
@@ -1228,7 +1228,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 5) {
+    if (oldVersion < 27) {
       final tankColumns = await db.rawQuery(
         'PRAGMA table_info(tanks)',
       );
@@ -1259,7 +1259,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 4) {
+    if (oldVersion < 27) {
       final columns = await db.rawQuery('PRAGMA table_info(clients)');
       final hasSyncId = columns.any(
         (column) => column['name'] == 'sync_id',
@@ -1346,7 +1346,7 @@ class DatabaseHelper {
       }
     }
 
-    if (oldVersion < 18) {
+    if (oldVersion < 27) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS account_transactions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1370,7 +1370,7 @@ class DatabaseHelper {
         ON account_transactions (account_type, reference_id, transaction_date)
       ''');
     }
-    if (oldVersion < 20) {
+    if (oldVersion < 27) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS purchase_invoices (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1442,7 +1442,7 @@ class DatabaseHelper {
       ''');
     }
 
-    if (oldVersion < 21) {
+    if (oldVersion < 27) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS sale_inventory_allocations (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1476,7 +1476,7 @@ class DatabaseHelper {
       ''');
     }
 
-    if (oldVersion < 19) {
+    if (oldVersion < 27) {
       await db.execute('ALTER TABLE payments ADD COLUMN payment_method TEXT');
       await db.execute('ALTER TABLE payments ADD COLUMN reference_number TEXT');
     }

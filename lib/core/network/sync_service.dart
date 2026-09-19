@@ -619,12 +619,32 @@ class SyncService {
         final data = await _downloadData(db, table, remote);
         if (data == null) continue;
         data.removeWhere((key, _) => !columns.contains(key));
-        if (existing.isEmpty) {
-          await db.insert(table, data,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        } else {
-          await db
-              .update(table, data, where: 'sync_id = ?', whereArgs: [syncId]);
+        try {
+          if (existing.isEmpty) {
+            final insertedId = await db.insert(
+              table,
+              data,
+              conflictAlgorithm: ConflictAlgorithm.abort,
+            );
+            debugPrint(
+              '$table DOWNLOAD INSERTED: sync_id=$syncId local_id=$insertedId',
+            );
+          } else {
+            final updatedCount = await db.update(
+              table,
+              data,
+              where: 'sync_id = ?',
+              whereArgs: [syncId],
+            );
+            debugPrint(
+              '$table DOWNLOAD UPDATED: sync_id=$syncId count=$updatedCount',
+            );
+          }
+        } catch (e, stackTrace) {
+          debugPrint(
+            '$table LOCAL DB WRITE ERROR: sync_id=$syncId error=$e data=$data',
+          );
+          debugPrint('$stackTrace');
         }
       } catch (e) {
         debugPrint('$table download error: $e');

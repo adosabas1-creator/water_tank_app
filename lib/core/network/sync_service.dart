@@ -52,10 +52,19 @@ class SyncService {
   dynamic get _currentUser => PermissionService.currentUser;
 
   bool _hasPermission(String permissionKey) {
-    return PermissionService.hasPermission(_currentUser, permissionKey);
+    final user = _currentUser;
+    if (user == null) return false;
+    // ✅ admin و deputy_manager لهم كل الصلاحيات تلقائيًا
+    // (permissions قد تكون مخزنة كنص في قواعد بيانات قديمة)
+    if (user.role == 'admin' || user.role == 'deputy_manager') return true;
+    return PermissionService.hasPermission(user, permissionKey);
   }
 
   bool _canDownloadTable(String table) {
+    // ✅ الإدارة ترى كل شيء
+    final role = _currentUser?.role;
+    if (role == 'admin' || role == 'deputy_manager') return true;
+
     switch (table) {
       case 'clients':
         return _hasPermission(PermissionKeys.clientsView) ||

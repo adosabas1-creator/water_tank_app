@@ -718,7 +718,16 @@ class SyncService {
       return;
     }
 
-    if (!await _ready()) return;
+    debugPrint(
+      'SYNC DEBUG: firebaseUser=${_auth.currentUser?.uid} '
+      'localUser=${_currentUser?.username} '
+      'role=${_currentUser?.role}',
+    );
+
+    if (!await _ready()) {
+      debugPrint('SYNC DEBUG: NOT READY');
+      return;
+    }
 
     _syncInProgress = true;
 

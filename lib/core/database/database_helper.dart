@@ -389,6 +389,31 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // ✅ إصلاح: إنشاء expenses إن كانت مفقودة
+    if (oldVersion < 24) {
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='expenses'",
+      );
+      if (tables.isEmpty) {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            expense_date TEXT NOT NULL,
+            notes TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            is_deleted INTEGER DEFAULT 0,
+            is_synced INTEGER DEFAULT 0,
+            sync_id TEXT UNIQUE NOT NULL,
+            FOREIGN KEY (created_by) REFERENCES users (id)
+          )
+        ''');
+      }
+    }
+
     if (oldVersion < 23) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS expenses (

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
@@ -29,9 +30,20 @@ Future<void> main() async {
   await _runAutomaticBackup();
   SyncService().startAutoSync();
 
+  // ✅ استعادة الجلسة السابقة (إن وُجدت) قبل تشغيل الواجهة.
+  // هذا يمنع إعادة تسجيل الدخول عند فتح التطبيق من جديد.
+  final userProvider = UserProvider();
+  await userProvider.restoreSession();
+
+  // ✅ مزامنة أولية عند بدء التطبيق (إذا كان متصلًا ومستخدمًا مسجّلًا).
+  // startAutoSync() يستمع فقط لتغيّر الاتصال، فإن فتحت التطبيق وأنت
+  // متصل أصلًا لن يُطلق الحدث. لذلك نُشغّل syncAll() يدويًا هنا.
+  // الأخطاء تُتجاهل — التطبيق يجب أن يعمل حتى بدون إنترنت.
+  unawaited(SyncService().syncAll());
+
   runApp(
-    ChangeNotifierProvider<UserProvider>(
-      create: (_) => UserProvider(),
+    ChangeNotifierProvider<UserProvider>.value(
+      value: userProvider,
       child: const MyApp(),
     ),
   );
@@ -63,13 +75,19 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ إذا كانت هناك جلسة محفوظة → ابدأ من Dashboard مباشرة
+    final currentUser = context.watch<UserProvider>().currentUser;
+    final home = currentUser != null
+        ? const DashboardScreen()
+        : const LoginScreen();
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'نظام إدارة صهاريج المياه',
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: const LoginScreen(),
+      home: home,
       routes: {
         '/login': (context) => const LoginScreen(),
         '/dashboard': (context) => const DashboardScreen(),

@@ -43,3 +43,21 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# === APK & builds ===
+water-tank-app-signed-release-apk/
+water_tank_apk/
+water_tank_apk_new/
+android/build/
+*.apk
+*.aab
+
+# === Backups ===
+*.bak
+*.before-*
+*.before_*
+firestore.rules.before-*
+
+# === IDE & temp ===
+.vscode/
+.idea/

@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================================
+    // login_directory: يسمح للجهاز الجديد بالبحث عن بريد المستخدم
+    // قبل تسجيل الدخول في Firebase Auth.
+    // - allow get:  ✅ قراءة مستند واحد بمعرّفه (username)
+    // - allow list: ❌ منع سرد كل المستخدمين (حماية من التسريب)
+    // ============================================================
+    match /businesses/alborai_water_tank/login_directory/{username} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if request.auth != null;
+    }
+
+    // ============================================================
+    // user_directory: يحتوي بيانات المستخدم الكاملة (role, permissions)
+    // يُقرأ فقط بعد تسجيل الدخول في Firebase Auth.
+    // ============================================================
+    match /businesses/alborai_water_tank/user_directory/{userId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ============================================================
+    // بقية بيانات الشركة: قراءة/كتابة لأي مستخدم مسجّل
+    // (السائقون يرون كل شيء داخل شركتهم، طبيعي)
+    // ============================================================
+    match /businesses/alborai_water_tank/{collection}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ❌ رفض أي شيء آخر
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

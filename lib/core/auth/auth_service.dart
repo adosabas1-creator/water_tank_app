@@ -4,11 +4,13 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:sqflite/sqflite.dart';
+import 'dart:async';
 import 'dart:convert';
 import '../database/database_helper.dart';
 import '../../models/user.dart';
 import '../constants/permissions.dart';
 import 'permission_service.dart';
+import '../network/sync_service.dart';
 
 class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
@@ -44,11 +46,15 @@ class AuthService {
       throw StateError('بيانات دليل تسجيل الدخول غير مكتملة');
     }
 
+    // ✅ استخدام username كمعرّف للمستند (بدل uid)
+    // السبب: عند تسجيل الدخول من جهاز جديد، السائق يعرف username فقط
+    // وليس uid. استخدام username كمعرّف يسمح بـ `.doc(username).get()`
+    // بدل `.where('username', ...).get()` التي تحتاج صلاحية list.
     await _firestore
         .collection('businesses')
         .doc(_businessId)
         .collection('login_directory')
-        .doc(uid)
+        .doc(username)
         .set({
       'username': username,
       'firebase_email': email,
@@ -56,6 +62,21 @@ class AuthService {
       'is_deleted': isDeleted,
       'updated_at': DateTime.now().toIso8601String(),
     }, SetOptions(merge: true));
+  }
+
+  /// يحذف مستند دليل تسجيل الدخول القديم عند تغيير اسم المستخدم
+  Future<void> _deleteLoginDirectoryByUsername(String username) async {
+    if (username.trim().isEmpty) return;
+    try {
+      await _firestore
+          .collection('businesses')
+          .doc(_businessId)
+          .collection('login_directory')
+          .doc(username.trim())
+          .delete();
+    } catch (_) {
+      // نتجاهل الأخطاء - قد لا يكون المستند موجودًا
+    }
   }
 
   Future<void> _publishUserDirectory(User user,
@@ -279,6 +300,15 @@ class AuthService {
         }
       }
 
+      // ✅ ترحيل تلقائي: ضمان وجود login_directory/{username} في Firestore.
+      // عند نجاح الدخول المحلي ومع توفر الإنترنت، نُحدّث دليل الدخول
+      // ليتمكن المستخدم من الدخول من أي جهاز جديد مستقبلًا.
+      // الأخطاء تُتجاهل لأن العملية قد تفشل بدون إنترنت — الدخول المحلي
+      // لا يجب أن يتعطل بسبب مشاكل الشبكة.
+      try {
+        await _publishLoginDirectory(user);
+      } catch (_) {}
+
       return user;
     }
 
@@ -286,17 +316,19 @@ class AuthService {
     // The device does not have a local account yet, so it cannot read
     // the protected user_directory until Firebase authentication succeeds.
     try {
-      final directorySnapshot = await _firestore
+      // ✅ قراءة بمستند واحد (get) بدل الاستعلام (list)
+      // السبب: القواعد الأمنية تسمح بـ get فقط لمنع سرد كل المستخدمين.
+      final directoryDoc = await _firestore
           .collection('businesses')
           .doc(_businessId)
           .collection('login_directory')
-          .where('username', isEqualTo: cleanUsername)
-          .limit(1)
+          .doc(cleanUsername)
           .get();
 
-      if (directorySnapshot.docs.isEmpty) return null;
+      if (!directoryDoc.exists) return null;
 
-      final directory = directorySnapshot.docs.first.data();
+      final directory = directoryDoc.data();
+      if (directory == null) return null;
 
       if (directory['is_deleted'] == true) return null;
 
@@ -366,6 +398,11 @@ class AuthService {
         user.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+
+      // ✅ تنزيل البيانات الأولية من Firestore إلى SQLite بعد bootstrap
+      // (جهاز جديد لا يملك بيانات محلية، فيجب تنزيل كل الجداول).
+      // يُشغَّل في الخلفية بدون await لتجنب تجميد الشاشة.
+      unawaited(SyncService().syncAll());
 
       return User.fromMap({
         ...user.toMap(),
@@ -498,6 +535,18 @@ class AuthService {
     );
     if (duplicate.isNotEmpty) throw ArgumentError('اسم المستخدم مستخدم بالفعل');
 
+    // ✅ حفظ username القديم قبل التحديث
+    final oldRows = await db.query(
+      'users',
+      columns: ['username'],
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+    final oldUsername = oldRows.isNotEmpty
+        ? oldRows.first['username']?.toString()
+        : null;
+
     final count = await db.update(
       'users',
       {
@@ -522,7 +571,17 @@ class AuthService {
 
     if (rows.isEmpty) return false;
 
-    await _publishUserDirectory(User.fromMap(rows.first));
+    final updatedUser = User.fromMap(rows.first);
+
+    // ✅ إذا تغيّر username: احذف المستند القديم من login_directory
+    if (oldUsername != null &&
+        oldUsername.trim().isNotEmpty &&
+        oldUsername.trim() != cleanUsername) {
+      await _deleteLoginDirectoryByUsername(oldUsername);
+    }
+
+    await _publishUserDirectory(updatedUser);
+    await _publishLoginDirectory(updatedUser);
     return true;
   }
 

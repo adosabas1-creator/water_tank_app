@@ -497,7 +497,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (user != null) {
-        context.read<UserProvider>().setUser(user);
+        await context.read<UserProvider>().setUser(user);
 
         try {
           await SyncService().syncAll();

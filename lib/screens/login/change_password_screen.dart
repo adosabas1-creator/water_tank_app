@@ -52,7 +52,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         if (!mounted) return;
 
         if (updatedUser != null) {
-          context.read<UserProvider>().setUser(updatedUser);
+          await context.read<UserProvider>().setUser(updatedUser);
         }
 
         if (!mounted) return;

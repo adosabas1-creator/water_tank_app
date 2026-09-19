@@ -712,52 +712,59 @@ class AuthService {
       throw StateError('حساب المستخدم غير مرتبط بـ Firebase');
     }
 
-    final firebaseEmail =
-        currentFirebaseUser?.email?.trim().toLowerCase();
-    final isSelf =
-        firebaseEmail != null && firebaseEmail == targetEmail.toLowerCase();
+    if (currentFirebaseUser == null ||
+        currentFirebaseUser.email?.trim().toLowerCase() !=
+            targetEmail.toLowerCase()) {
+      // المدير لا يستطيع من تطبيق العميل تغيير كلمة مرور حساب Firebase
+      // لمستخدم آخر مباشرة. إرسال رابط الاستعادة لا يعني أن كلمة المرور
+      // الجديدة قد أصبحت فعالة، لذلك لا نغيّر SQLite هنا.
+      PermissionService.requirePermission(PermissionKeys.usersManage);
+      throw StateError(
+        'لا يمكن للمدير تعيين كلمة مرور مستخدم آخر مباشرة من التطبيق. '
+        'استخدم رابط استعادة كلمة المرور؛ لم يتم تغيير كلمة المرور المحلية.',
+      );
+    }
 
     // المستخدم يغيّر كلمة مروره بنفسه.
     // يجب نجاح Firebase أولًا، وبعدها فقط نحدّث SQLite.
-    if (isSelf) {
-      try {
-        if (currentPassword != null && currentPassword.isNotEmpty) {
-          final cred = firebase_auth.EmailAuthProvider.credential(
-            email: targetEmail,
-            password: currentPassword,
-          );
-          await currentFirebaseUser.reauthenticateWithCredential(cred);
-        }
-
-        await currentFirebaseUser.updatePassword(newPassword);
-      } on firebase_auth.FirebaseAuthException catch (e) {
-        switch (e.code) {
-          case 'wrong-password':
-          case 'invalid-credential':
-            throw StateError('كلمة المرور الحالية غير صحيحة');
-          case 'requires-recent-login':
-            throw StateError(
-              'انتهت صلاحية جلسة Firebase. سجّل الدخول مرة أخرى ثم حاول.',
-            );
-          case 'network-request-failed':
-            throw StateError(
-              'تعذر الاتصال بـ Firebase. لم يتم تغيير كلمة المرور المحلية.',
-            );
-          case 'weak-password':
-            throw StateError('كلمة المرور الجديدة ضعيفة');
-          default:
-            throw StateError(
-              'تعذر تغيير كلمة المرور في Firebase. رمز الخطأ: ${e.code}',
-            );
-        }
-      } catch (e) {
-        if (e is StateError) rethrow;
-        throw StateError(
-          'تعذر تغيير كلمة المرور في Firebase. لم يتم تغيير كلمة المرور المحلية.',
+    try {
+      if (currentPassword != null && currentPassword.isNotEmpty) {
+        final cred = firebase_auth.EmailAuthProvider.credential(
+          email: targetEmail,
+          password: currentPassword,
         );
+        await currentFirebaseUser.reauthenticateWithCredential(cred);
       }
 
-      final count = await db.update(
+      await currentFirebaseUser.updatePassword(newPassword);
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'wrong-password':
+        case 'invalid-credential':
+          throw StateError('كلمة المرور الحالية غير صحيحة');
+        case 'requires-recent-login':
+          throw StateError(
+            'انتهت صلاحية جلسة Firebase. سجّل الدخول مرة أخرى ثم حاول.',
+          );
+        case 'network-request-failed':
+          throw StateError(
+            'تعذر الاتصال بـ Firebase. لم يتم تغيير كلمة المرور المحلية.',
+          );
+        case 'weak-password':
+          throw StateError('كلمة المرور الجديدة ضعيفة');
+        default:
+          throw StateError(
+            'تعذر تغيير كلمة المرور في Firebase. رمز الخطأ: ${e.code}',
+          );
+      }
+    } catch (e) {
+      if (e is StateError) rethrow;
+      throw StateError(
+        'تعذر تغيير كلمة المرور في Firebase. لم يتم تغيير كلمة المرور المحلية.',
+      );
+    }
+
+    final count = await db.update(
         'users',
         {
           'password_hash': _hashPassword(newPassword),

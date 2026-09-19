@@ -710,6 +710,24 @@ class DatabaseHelper {
     }
   }
 
+  /// ينفذ SQL بشكل آمن ويتجاهل أخطاء "العمود موجود مسبقًا".
+  /// مفيد لعمليات ALTER TABLE على قواعد بيانات قديمة تحتوي الأعمدة بالفعل.
+  Future<void> _safeExec(Database db, String sql) async {
+    try {
+      await db.execute(sql);
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('duplicate column') ||
+          msg.contains('already exists') ||
+          msg.contains('duplicate column name')) {
+        debugPrint('⏭️ Skipped (already exists): $sql');
+        return;
+      }
+      debugPrint('❌ _safeExec error: $e');
+      rethrow;
+    }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -774,9 +792,7 @@ class DatabaseHelper {
       final tankIsNotNull = tankColumn['notnull'] == 1;
 
       if (tankIsNotNull) {
-        await db.execute(
-          'ALTER TABLE filling_operations RENAME TO filling_operations_old',
-        );
+        await _safeExec(db, 'ALTER TABLE filling_operations RENAME TO filling_operations_old');
 
         await db.execute('''
           CREATE TABLE filling_operations (
@@ -861,21 +877,15 @@ class DatabaseHelper {
       );
 
       if (!hasClientPaymentStatus) {
-        await db.execute(
-          'ALTER TABLE sales ADD COLUMN client_payment_status TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE sales ADD COLUMN client_payment_status TEXT');
       }
 
       if (!hasSupplierPaymentStatus) {
-        await db.execute(
-          'ALTER TABLE sales ADD COLUMN supplier_payment_status TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE sales ADD COLUMN supplier_payment_status TEXT');
       }
 
       if (!hasCreatedByName) {
-        await db.execute(
-          'ALTER TABLE sales ADD COLUMN created_by_name TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE sales ADD COLUMN created_by_name TEXT');
       }
     }
 
@@ -898,7 +908,7 @@ class DatabaseHelper {
       final tankIsNotNull = tankColumn['notnull'] == 1;
 
       if (clientIsNotNull || tankIsNotNull) {
-        await db.execute('ALTER TABLE sales RENAME TO sales_old');
+        await _safeExec(db, 'ALTER TABLE sales RENAME TO sales_old');
 
         await db.execute('''
           CREATE TABLE sales (
@@ -959,9 +969,7 @@ class DatabaseHelper {
         (column) => column['name'] == 'phone',
       );
       if (!hasClientPhone) {
-        await db.execute(
-          'ALTER TABLE clients ADD COLUMN phone TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE clients ADD COLUMN phone TEXT');
       }
 
       final supplierColumns = await db.rawQuery(
@@ -971,9 +979,7 @@ class DatabaseHelper {
         (column) => column['name'] == 'phone',
       );
       if (!hasSupplierPhone) {
-        await db.execute(
-          'ALTER TABLE suppliers ADD COLUMN phone TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE suppliers ADD COLUMN phone TEXT');
       }
     }
 
@@ -986,9 +992,7 @@ class DatabaseHelper {
       );
 
       if (!hasUserSyncId) {
-        await db.execute(
-          'ALTER TABLE users ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE users ADD COLUMN sync_id TEXT');
 
         final userRows = await db.query(
           'users',
@@ -1017,9 +1021,7 @@ class DatabaseHelper {
       );
 
       if (!hasMustChangePassword) {
-        await db.execute(
-          'ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0',
-        );
+        await _safeExec(db, 'ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
       }
     }
 
@@ -1035,15 +1037,11 @@ class DatabaseHelper {
       );
 
       if (!hasFirebaseUid) {
-        await db.execute(
-          'ALTER TABLE users ADD COLUMN firebase_uid TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE users ADD COLUMN firebase_uid TEXT');
       }
 
       if (!hasFirebaseEmail) {
-        await db.execute(
-          'ALTER TABLE users ADD COLUMN firebase_email TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE users ADD COLUMN firebase_email TEXT');
       }
     }
 
@@ -1054,9 +1052,7 @@ class DatabaseHelper {
       );
 
       if (!hasDriverId) {
-        await db.execute(
-          'ALTER TABLE users ADD COLUMN driver_id INTEGER',
-        );
+        await _safeExec(db, 'ALTER TABLE users ADD COLUMN driver_id INTEGER');
       }
     }
 
@@ -1067,9 +1063,7 @@ class DatabaseHelper {
       );
 
       if (!hasRecoveryCodeHash) {
-        await db.execute(
-          'ALTER TABLE users ADD COLUMN recovery_code_hash TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE users ADD COLUMN recovery_code_hash TEXT');
       }
     }
 
@@ -1082,9 +1076,7 @@ class DatabaseHelper {
       );
 
       if (!hasSalarySyncId) {
-        await db.execute(
-          'ALTER TABLE salaries ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE salaries ADD COLUMN sync_id TEXT');
 
         final salaryRows = await db.query(
           'salaries',
@@ -1113,9 +1105,7 @@ class DatabaseHelper {
       );
 
       if (!hasExpenseSyncId) {
-        await db.execute(
-          'ALTER TABLE expenses ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE expenses ADD COLUMN sync_id TEXT');
 
         final expenseRows = await db.query(
           'expenses',
@@ -1144,9 +1134,7 @@ class DatabaseHelper {
       );
 
       if (!hasPaymentSyncId) {
-        await db.execute(
-          'ALTER TABLE payments ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE payments ADD COLUMN sync_id TEXT');
 
         final paymentRows = await db.query(
           'payments',
@@ -1175,9 +1163,7 @@ class DatabaseHelper {
       );
 
       if (!hasSaleSyncId) {
-        await db.execute(
-          'ALTER TABLE sales ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE sales ADD COLUMN sync_id TEXT');
 
         final saleRows = await db.query(
           'sales',
@@ -1206,9 +1192,7 @@ class DatabaseHelper {
       );
 
       if (!hasOperationSyncId) {
-        await db.execute(
-          'ALTER TABLE filling_operations ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE filling_operations ADD COLUMN sync_id TEXT');
 
         final operationRows = await db.query(
           'filling_operations',
@@ -1237,9 +1221,7 @@ class DatabaseHelper {
       );
 
       if (!hasTankSyncId) {
-        await db.execute(
-          'ALTER TABLE tanks ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE tanks ADD COLUMN sync_id TEXT');
 
         final tankRows = await db.query(
           'tanks',
@@ -1266,9 +1248,7 @@ class DatabaseHelper {
       );
 
       if (!hasSyncId) {
-        await db.execute(
-          'ALTER TABLE clients ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE clients ADD COLUMN sync_id TEXT');
 
         final rows = await db.query(
           'clients',
@@ -1295,9 +1275,7 @@ class DatabaseHelper {
       );
 
       if (!hasDriverSyncId) {
-        await db.execute(
-          'ALTER TABLE drivers ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE drivers ADD COLUMN sync_id TEXT');
 
         final driverRows = await db.query(
           'drivers',
@@ -1324,9 +1302,7 @@ class DatabaseHelper {
       );
 
       if (!hasSupplierSyncId) {
-        await db.execute(
-          'ALTER TABLE suppliers ADD COLUMN sync_id TEXT',
-        );
+        await _safeExec(db, 'ALTER TABLE suppliers ADD COLUMN sync_id TEXT');
 
         final supplierRows = await db.query(
           'suppliers',
@@ -1477,8 +1453,8 @@ class DatabaseHelper {
     }
 
     if (oldVersion < 27) {
-      await db.execute('ALTER TABLE payments ADD COLUMN payment_method TEXT');
-      await db.execute('ALTER TABLE payments ADD COLUMN reference_number TEXT');
+      await _safeExec(db, 'ALTER TABLE payments ADD COLUMN payment_method TEXT');
+      await _safeExec(db, 'ALTER TABLE payments ADD COLUMN reference_number TEXT');
     }
   }
 }

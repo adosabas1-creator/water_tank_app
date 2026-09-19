@@ -18,7 +18,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() && userDoc().data.role == 'admin';
+      return signedIn() &&
+        (
+          userDoc().data.role == 'admin' ||
+          userDoc().data.role == 'deputy_manager'
+        );
     }
 
     function isManagement() {

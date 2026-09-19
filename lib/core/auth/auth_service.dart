@@ -11,7 +11,6 @@ import '../database/database_helper.dart';
 import '../../models/user.dart';
 import '../constants/permissions.dart';
 import 'permission_service.dart';
-import '../network/sync_service.dart';
 
 class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
@@ -435,10 +434,8 @@ class AuthService {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
-      // ✅ تنزيل البيانات الأولية من Firestore إلى SQLite بعد bootstrap
-      // (جهاز جديد لا يملك بيانات محلية، فيجب تنزيل كل الجداول).
-      // يُشغَّل في الخلفية بدون await لتجنب تجميد الشاشة.
-      unawaited(SyncService().syncAll());
+      // ملاحظة: لا نُشغّل syncAll هنا لأن PermissionService.currentUser
+      // لم يُضبط بعد. login_screen سيستدعي setUser ثم syncAll بالترتيب الصحيح.
 
       return User.fromMap({
         ...user.toMap(),

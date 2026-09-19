@@ -176,6 +176,11 @@ class _UsersScreenState extends State<UsersScreen> {
                         icon: const Icon(Icons.settings),
                         onPressed: () => _showPermissionsDialog(user),
                       ),
+                      IconButton(
+                        tooltip: 'إعادة تعيين كلمة المرور',
+                        icon: const Icon(Icons.key),
+                        onPressed: () => _sendPasswordReset(user),
+                      ),
                     ],
                   ),
                   onTap: () => _showPermissionsDialog(user),
@@ -995,6 +1000,87 @@ class _UsersScreenState extends State<UsersScreen> {
         });
       },
     );
+  }
+
+  /// يرسل رابط إعادة تعيين كلمة المرور لبريد المستخدم.
+  /// يعمل فقط مع بريد حقيقي (Gmail / Outlook / إلخ).
+  /// البريد المولَّد كـ alias (adosabas1+user@gmail.com) يصل للمدير المركزي.
+  Future<void> _sendPasswordReset(User user) async {
+    final email = user.firebaseEmail?.trim() ?? '';
+
+    if (email.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا يوجد بريد مسجَّل لهذا المستخدم'),
+        ),
+      );
+      return;
+    }
+
+    // ⚠️ تحذير لو البريد فيه علامة + (alias) - يصل للمدير وليس للمستخدم
+    final isAlias = email.contains('+');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('إعادة تعيين كلمة المرور'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('سيتم إرسال رابط إعادة تعيين إلى:\n$email'),
+            const SizedBox(height: 12),
+            if (isAlias)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: const Text(
+                  '⚠️ هذا بريد بديل (alias). الرابط سيصل إلى بريد المدير المركزي، وليس المستخدم.',
+                  style: TextStyle(fontSize: 12, color: Colors.orange),
+                ),
+              ),
+            const SizedBox(height: 12),
+            const Text(
+              'ملاحظة: للمستخدم القديم الذي لم يغيّر كلمته بعد، يمكنه الدخول بكلمة المرور القديمة ثم تغييرها من داخل التطبيق.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('إرسال'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _authService.sendPasswordResetEmail(email);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إرسال رابط إعادة التعيين إلى $email'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل إرسال البريد:\n$e')),
+      );
+    }
   }
 
   Future<void> _createBackup() async {

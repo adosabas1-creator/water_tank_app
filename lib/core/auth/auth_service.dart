@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
@@ -18,6 +19,27 @@ class AuthService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const String _businessId = 'alborai_water_tank';
+
+  // ✅ البريد المركزي لـ aliases (كل الرسائل تصل إليه)
+  static const String _masterEmailPrefix = 'adosabas1';
+  static const String _masterEmailDomain = 'gmail.com';
+
+  /// يولّد بريدًا بديلًا (alias) لـ Gmail المركزي
+  /// مثال: "ahmed" → adosabas1+ahmed@gmail.com
+  /// كل الرسائل على هذه العناوين تصل إلى adosabas1@gmail.com
+  String _generateAliasEmail(String username) {
+    // تنظيف اسم المستخدم ليصلح كـ alias (a-z, 0-9, _)
+    final safe = username
+        .trim()
+        .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .toLowerCase();
+
+    final finalName =
+        safe.isEmpty ? 'user_${DateTime.now().millisecondsSinceEpoch}' : safe;
+
+    return '$_masterEmailPrefix+$finalName@$_masterEmailDomain';
+  }
   Future<firebase_auth.FirebaseAuth> _secondaryAuth() async {
     const appName = 'water_tank_secondary_auth';
 
@@ -441,7 +463,7 @@ class AuthService {
     PermissionService.requirePermission(PermissionKeys.usersManage);
     final cleanUsername = username.trim();
     final cleanFullName = fullName.trim();
-    final cleanEmail = firebaseEmail?.trim();
+    final providedEmail = firebaseEmail?.trim();
 
     if (cleanUsername.isEmpty) throw ArgumentError('اسم المستخدم مطلوب');
     if (cleanFullName.isEmpty) throw ArgumentError('الاسم الكامل مطلوب');
@@ -452,9 +474,10 @@ class AuthService {
       throw ArgumentError('الدور غير صالح');
     }
 
-    if (cleanEmail == null || cleanEmail.isEmpty) {
-      throw ArgumentError('بريد Firebase مطلوب');
-    }
+    // ✅ إذا لم يُدخل بريد، نولّد alias على Gmail المركزي
+    final cleanEmail = (providedEmail == null || providedEmail.isEmpty)
+        ? _generateAliasEmail(cleanUsername)
+        : providedEmail;
 
     final emailRegex = RegExp(
       r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
@@ -657,16 +680,73 @@ class AuthService {
     await _publishUserDirectory(User.fromMap(rows.first));
   }
 
+  /// يغيّر كلمة مرور المستخدم في SQLite + Firebase Auth.
+  ///
+  /// [currentPassword]: كلمة المرور الحالية - مطلوبة فقط إذا كان
+  /// المستخدم يغيّر كلمته بنفسه (لإعادة المصادقة).
+  ///
+  /// ملاحظة مهمة (Spark-only، بدون Cloud Functions):
+  /// - إذا كان المستخدم يغيّر كلمته بنفسه → updatePassword مباشرة
+  /// - إذا كان المدير يغيّر كلمة سائق آخر → يُرسل رابط إعادة تعيين
+  ///   (لأن Firebase يمنع تغيير كلمة مرور مستخدم آخر من الـ client)
   Future<bool> updateUserPassword({
     required int userId,
     required String newPassword,
+    String? currentPassword,
   }) async {
-    PermissionService.requireAdmin();
+    PermissionService.requirePermission(PermissionKeys.usersManage);
 
     if (newPassword.length < 6) {
       throw ArgumentError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
     }
+
     final db = await _dbHelper.database;
+
+    // اقرأ بيانات المستخدم الهدف
+    final targetRows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+    if (targetRows.isEmpty) return false;
+
+    final targetUser = User.fromMap(targetRows.first);
+    final targetEmail = targetUser.firebaseEmail;
+    final currentFirebaseUser = _firebaseAuth.currentUser;
+
+    // === 1. تحديث Firebase Auth ===
+    if (targetEmail != null && targetEmail.isNotEmpty) {
+      final isSelf = currentFirebaseUser?.email == targetEmail;
+
+      if (isSelf && currentFirebaseUser != null) {
+        // المستخدم يغيّر كلمته بنفسه → updatePassword
+        try {
+          if (currentPassword != null && currentPassword.isNotEmpty) {
+            final cred = firebase_auth.EmailAuthProvider.credential(
+              email: targetEmail,
+              password: currentPassword,
+            );
+            await currentFirebaseUser.reauthenticateWithCredential(cred);
+          }
+          await currentFirebaseUser.updatePassword(newPassword);
+          debugPrint('Firebase password updated (self)');
+        } catch (e) {
+          debugPrint('Firebase updatePassword failed: $e');
+          // لا نُوقف العملية — SQLite سيبقى محدَّثًا
+        }
+      } else {
+        // المدير يغيّر كلمة مرور شخص آخر → إرسال بريد إعادة تعيين
+        try {
+          await _firebaseAuth.sendPasswordResetEmail(email: targetEmail);
+          debugPrint('Password reset email sent to $targetEmail');
+        } catch (e) {
+          debugPrint('Firebase sendResetEmail failed: $e');
+        }
+      }
+    }
+
+    // === 2. تحديث SQLite ===
     final count = await db.update(
       'users',
       {
@@ -678,6 +758,7 @@ class AuthService {
       where: 'id = ? AND is_deleted = 0',
       whereArgs: [userId],
     );
+
     return count > 0;
   }
 

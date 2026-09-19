@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/auth/auth_service.dart';
 import '../../core/auth/user_provider.dart';
-import 'package:provider/provider.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -12,16 +12,19 @@ class ChangePasswordScreen extends StatefulWidget {
 
 class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final AuthService _authService = AuthService();
 
   bool _isLoading = false;
+  bool _obscureCurrentPassword = true;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
+    _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -36,14 +39,17 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // ✅ نمرّر كلمة المرور الحالية لدعم reauthenticate مع Firebase
       final success = await _authService.updateUserPassword(
         userId: user!.id!,
         newPassword: _newPasswordController.text,
+        currentPassword: _currentPasswordController.text,
       );
 
       if (!mounted) return;
 
       if (success) {
+        // إعادة تسجيل الدخول بكلمة المرور الجديدة
         final updatedUser = await _authService.login(
           user.username,
           _newPasswordController.text,
@@ -56,11 +62,20 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         }
 
         if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم تغيير كلمة المرور بنجاح')),
+        );
+
         Navigator.of(context).pop();
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر تغيير كلمة المرور')),
+        );
       }
     } catch (e) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('حدث خطأ: $e')),
       );
@@ -99,6 +114,37 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     style: TextStyle(fontSize: 18),
                   ),
                   const SizedBox(height: 24),
+
+                  // ✅ حقل كلمة المرور الحالية (جديد)
+                  TextFormField(
+                    controller: _currentPasswordController,
+                    obscureText: _obscureCurrentPassword,
+                    decoration: InputDecoration(
+                      labelText: 'كلمة المرور الحالية',
+                      helperText: 'مطلوبة للتحقق من هويتك',
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureCurrentPassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscureCurrentPassword = !_obscureCurrentPassword;
+                          });
+                        },
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'كلمة المرور الحالية مطلوبة';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // حقل كلمة المرور الجديدة
                   TextFormField(
                     controller: _newPasswordController,
                     obscureText: _obscureNewPassword,
@@ -121,10 +167,15 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                       if (value == null || value.length < 6) {
                         return 'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل';
                       }
+                      if (value == _currentPasswordController.text) {
+                        return 'كلمة المرور الجديدة يجب أن تختلف عن الحالية';
+                      }
                       return null;
                     },
                   ),
                   const SizedBox(height: 16),
+
+                  // حقل تأكيد كلمة المرور
                   TextFormField(
                     controller: _confirmPasswordController,
                     obscureText: _obscureConfirmPassword,
@@ -138,8 +189,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                         ),
                         onPressed: () {
                           setState(() {
-                            _obscureConfirmPassword =
-                                !_obscureConfirmPassword;
+                            _obscureConfirmPassword = !_obscureConfirmPassword;
                           });
                         },
                       ),
@@ -152,6 +202,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     },
                   ),
                   const SizedBox(height: 24),
+
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(

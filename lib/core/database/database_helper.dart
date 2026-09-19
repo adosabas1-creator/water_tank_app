@@ -388,7 +388,60 @@ class DatabaseHelper {
     }
   }
 
+  /// يفحص الجداول الأساسية وينشئها إن كانت مفقودة.
+  /// يعمل بغض النظر عن إصدار قاعدة البيانات الحالي.
+  Future<void> _ensureCoreTables(Database db) async {
+    // كل CREATE TABLE في onCreate
+    final tables = <String>[
+      'users', 'clients', 'suppliers', 'drivers', 'tanks',
+      'filling_operations', 'sales', 'payments', 'account_transactions',
+      'purchase_invoices', 'purchase_items', 'inventory_layers',
+      'sale_inventory_allocations', 'expenses', 'salaries', 'operation_logs',
+    ];
+
+    for (final table in tables) {
+      try {
+        final rows = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+          [table],
+        );
+        if (rows.isEmpty) {
+          debugPrint('Table $table missing — creating it now');
+
+          if (table == 'expenses') {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                expense_type TEXT NOT NULL,
+                amount REAL NOT NULL,
+                expense_date TEXT NOT NULL,
+                notes TEXT,
+                created_by INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                is_deleted INTEGER DEFAULT 0,
+                is_synced INTEGER DEFAULT 0,
+                sync_id TEXT UNIQUE NOT NULL,
+                FOREIGN KEY (created_by) REFERENCES users (id)
+              )
+            ''');
+            debugPrint('Table expenses created successfully');
+          }
+          // يمكن إضافة جداول أخرى لاحقًا
+        }
+      } catch (e) {
+        debugPrint('Error ensuring table $table: $e');
+      }
+    }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
+    // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
+    if (oldVersion < 25) {
+      await _ensureCoreTables(db);
+    }
+
     // ✅ إصلاح: إنشاء expenses إن كانت مفقودة
     if (oldVersion < 24) {
       final tables = await db.rawQuery(

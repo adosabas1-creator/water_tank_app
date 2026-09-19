@@ -11,6 +11,9 @@ class PermissionService {
 
   static bool hasPermission(User? user, String permissionKey) {
     if (user == null) return false;
+    // ✅ الأدمن له كل الصلاحيات تلقائيًا
+    // لا نعتمد على خريطة permissions لأنها قد تُفرّغها المزامنة
+    if (user.role == 'admin') return true;
     return user.permissions[permissionKey] ?? false;
   }
 

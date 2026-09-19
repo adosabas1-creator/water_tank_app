@@ -255,6 +255,13 @@ class AuthService {
                   });
                 }
 
+                final remoteRole = remote['role']?.toString() ?? user.role;
+                // ✅ حماية: إذا كانت صلاحيات Firestore فارغة، استخدم
+                // الصلاحيات الافتراضية حسب الدور (خاصة للأدمن).
+                final effectivePermissions = permissions.isEmpty
+                    ? _defaultPermissionsForRole(remoteRole)
+                    : permissions;
+
                 await db.update(
                   'users',
                   {
@@ -264,8 +271,8 @@ class AuthService {
                     'username': remote['username']?.toString() ?? user.username,
                     'full_name':
                         remote['full_name']?.toString() ?? user.fullName,
-                    'role': remote['role']?.toString() ?? user.role,
-                    'permissions': User.permissionsToJson(permissions),
+                    'role': remoteRole,
+                    'permissions': User.permissionsToJson(effectivePermissions),
                     'must_change_password':
                         remote['must_change_password'] == true ? 1 : 0,
                     'updated_at': DateTime.now().toIso8601String(),
@@ -367,6 +374,13 @@ class AuthService {
         });
       }
 
+      final remoteRole = remote['role']?.toString() ?? 'member';
+      // ✅ حماية: إذا كانت الصلاحيات فارغة في Firestore،
+      // استخدم الصلاحيات الافتراضية حسب الدور.
+      final effectivePermissions = permissions.isEmpty
+          ? _defaultPermissionsForRole(remoteRole)
+          : permissions;
+
       final now = DateTime.now().toIso8601String();
 
       final user = User(
@@ -379,7 +393,7 @@ class AuthService {
         passwordHash: passwordHash,
         recoveryCodeHash: null,
         fullName: remote['full_name']?.toString() ?? cleanUsername,
-        role: remote['role']?.toString() ?? 'member',
+        role: remoteRole,
 
         // Convert the stable Firebase driver sync_id to this device's local driver ID.
         driverId: await _localDriverIdFromSyncId(
@@ -387,7 +401,7 @@ class AuthService {
           remote['driver_sync_id'],
         ),
 
-        permissions: permissions,
+        permissions: effectivePermissions,
         createdAt: remote['created_at']?.toString() ?? now,
         updatedAt: remote['updated_at']?.toString() ?? now,
         mustChangePassword: remote['must_change_password'] == true,

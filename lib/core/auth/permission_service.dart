@@ -19,11 +19,15 @@ class PermissionService {
 
   static bool hasAnyPermission(User? user, List<String> permissionKeys) {
     if (user == null) return false;
+    // الأدمن له جميع الصلاحيات تلقائيًا
+    if (user.role == 'admin') return true;
     return permissionKeys.any((key) => user.permissions[key] ?? false);
   }
 
   static bool hasAllPermissions(User? user, List<String> permissionKeys) {
     if (user == null) return false;
+    // الأدمن له جميع الصلاحيات تلقائيًا
+    if (user.role == 'admin') return true;
     return permissionKeys.every((key) => user.permissions[key] ?? false);
   }
 

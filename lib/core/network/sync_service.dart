@@ -603,6 +603,19 @@ class SyncService {
         : _collection(table);
 
     final snapshot = await collection.get();
+    debugPrint(
+      'FIRESTORE READ TEST: table=$table docs=${snapshot.docs.length}',
+    );
+    if (table == 'clients' || table == 'suppliers') {
+      for (final doc in snapshot.docs.take(5)) {
+        final d = doc.data();
+        debugPrint(
+          'FIRESTORE READ TEST: $table doc=${doc.id} '
+          'sync_id=${d['sync_id']} name=${d['name']} '
+          'updated_at=${d['updated_at']}',
+        );
+      }
+    }
     final columns = await _columns(db, table);
     for (final doc in snapshot.docs) {
       try {

@@ -1,6 +1,8 @@
 import '../core/auth/permission_service.dart';
 import '../core/constants/permissions.dart';
+import 'dart:async';
 import '../core/database/database_helper.dart';
+import '../core/network/sync_service.dart';
 import '../models/account_transaction.dart';
 import '../models/sale.dart';
 
@@ -14,7 +16,7 @@ class SaleService {
     if (sale.units <= 0) throw Exception('يجب أن تكون كمية البيع أكبر من صفر.');
     if (sale.totalAmount < 0) throw Exception('إجمالي البيع غير صالح.');
 
-    return await db.transaction((txn) async {
+    final savedSale = await db.transaction((txn) async {
       await _validateSaleReferences(txn, sale);
       final allocationResult =
           await _allocateInventoryFIFO(txn, sale.units, sale.supplierId);
@@ -79,6 +81,9 @@ class SaleService {
         isSynced: calculatedSale.isSynced,
       );
     });
+
+    unawaited(SyncService().syncAll());
+    return savedSale;
   }
 
   Future<void> _validateSaleReferences(dynamic txn, Sale sale) async {
@@ -396,6 +401,8 @@ class SaleService {
           txn, sale.id!, oldSale.syncId, allocationResult.allocations, now);
       await _createClientDebtIfNeeded(txn, updatedSale, sale.id!, now);
     });
+
+    unawaited(SyncService().syncAll());
   }
 
   Future<void> deleteSale(int id) async {
@@ -424,6 +431,8 @@ class SaleService {
           whereArgs: [id]);
       if (changed != 1) throw StateError('تعذر حذف المبيعة.');
     });
+
+    unawaited(SyncService().syncAll());
   }
 }
 

@@ -1,4 +1,6 @@
+import 'dart:async';
 import '../core/auth/permission_service.dart';
+import '../core/network/sync_service.dart';
 import '../core/database/database_helper.dart';
 import '../models/account_transaction.dart';
 import '../models/inventory_layer.dart';
@@ -97,7 +99,7 @@ class PurchaseService {
       throw StateError('المورد غير موجود أو محذوف.');
     }
 
-    return db.transaction((txn) async {
+    final invoiceId = await db.transaction((txn) async {
       final invoiceData = invoice.toMap()..remove('id');
       invoiceData['payment_status'] = expectedStatus;
 
@@ -198,6 +200,9 @@ class PurchaseService {
 
       return invoiceId;
     });
+
+    unawaited(SyncService().syncAll());
+    return invoiceId;
   }
 
   /// Soft-deletes a purchase invoice and every local record owned by it.
@@ -299,5 +304,7 @@ class PurchaseService {
         whereArgs: [invoiceId],
       );
     });
+
+    unawaited(SyncService().syncAll());
   }
 }

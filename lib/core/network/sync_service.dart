@@ -757,14 +757,18 @@ class SyncService {
       ];
 
       for (final table in order) {
+        debugPrint('SYNC DEBUG: UPLOAD START table=$table');
         await _uploadTable(table);
+        debugPrint('SYNC DEBUG: UPLOAD DONE table=$table');
       }
 
       for (final table in order) {
+        debugPrint('SYNC DEBUG: DOWNLOAD START table=$table');
         await _downloadTable(table);
+        debugPrint('SYNC DEBUG: DOWNLOAD DONE table=$table');
       }
 
-      debugPrint('Sync completed successfully');
+      debugPrint('SYNC DEBUG: COMPLETED SUCCESSFULLY');
     } catch (e, stackTrace) {
       debugPrint('Sync failed: $e');
       debugPrint('$stackTrace');

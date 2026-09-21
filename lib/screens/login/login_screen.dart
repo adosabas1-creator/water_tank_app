@@ -501,7 +501,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
         // المزامنة لا يجب أن تمنع الدخول المحلي، خصوصًا بدون إنترنت.
         // نشغّلها في الخلفية ولا ننتظر اكتمالها.
-        SyncService().syncAll().catchError((_) {});
+          // إذا كان الإنترنت متاحًا، نثبت جلسة Firebase حتى تعمل المزامنة.
+          // عند عدم توفر الإنترنت أو فشل Firebase، يبقى الدخول المحلي ناجحًا.
+          final firebaseEmail = user.firebaseEmail?.trim() ?? '';
+          if (firebaseEmail.isNotEmpty) {
+            try {
+              await _authService.signInToFirebase(
+                firebaseEmail,
+                _passwordController.text,
+              );
+            } catch (e) {
+              debugPrint('Firebase online login skipped: $e');
+            }
+          }
+
+          // المزامنة لا يجب أن تمنع الدخول المحلي.
+          // نشغّلها في الخلفية ولا ننتظر اكتمالها.
+          SyncService().syncAll().catchError((_) {});
 
         if (!mounted) return;
 

@@ -447,10 +447,12 @@ class AuthService {
     if (duplicate.isNotEmpty) {
       localId = (duplicate.first['id'] as num).toInt();
 
+      final userData = user.toMap()..remove('id');
+
       await db.update(
         'users',
         {
-          ...user.toMap(),
+          ...userData,
           'is_deleted': 0,
           'is_synced': 0,
         },

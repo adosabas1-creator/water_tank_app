@@ -9,6 +9,8 @@ import '../../services/payment_service.dart';
 import '../../services/client_service.dart';
 import '../../services/supplier_service.dart';
 import '../../core/auth/user_provider.dart';
+import '../../core/network/communication_service.dart';
+import '../../services/voucher_service.dart';
 
 class PaymentsScreen extends StatefulWidget {
   final String? initialPaymentType;
@@ -200,15 +202,14 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                 if (payment == null) {
                   final syncId = const Uuid().v4();
 
-                  final voucherPrefix = paymentType == 'client_payment' ? 'RC' : 'PV';
+                  final voucherPrefix =
+                      paymentType == 'client_payment' ? 'RC' : 'PV';
 
-                  final paymentKey = '$voucherPrefix-${DateTime.now().millisecondsSinceEpoch}';
-
+                  final paymentKey =
+                      '$voucherPrefix-${DateTime.now().millisecondsSinceEpoch}';
 
                   final newPayment = Payment(
-
                     syncId: syncId,
-
                     paymentKey: paymentKey,
                     paymentType: paymentType,
                     referenceId: referenceId,
@@ -370,8 +371,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                                   context: context,
                                   builder: (pickerContext) {
                                     return StatefulBuilder(
-                                      builder:
-                                          (pickerContext, setPickerState) {
+                                      builder: (pickerContext, setPickerState) {
                                         final query = searchController.text
                                             .trim()
                                             .toLowerCase();
@@ -396,8 +396,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                                             child: Column(
                                               children: [
                                                 TextField(
-                                                  controller:
-                                                      searchController,
+                                                  controller: searchController,
                                                   autofocus: true,
                                                   decoration:
                                                       const InputDecoration(
@@ -648,6 +647,325 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
     }
   }
 
+  Future<void> _showVoucherPreview(Payment payment) async {
+    final isClient = payment.paymentType == 'client_payment';
+
+    String accountName = _referenceName(payment);
+    String? accountPhone;
+
+    if (isClient) {
+      final clients = await _clientService.getAllClients();
+      for (final client in clients) {
+        if (client.id == payment.referenceId) {
+          accountName = client.name;
+          accountPhone = client.phone;
+          break;
+        }
+      }
+    } else {
+      final suppliers = await _supplierService.getAllSuppliers();
+      for (final supplier in suppliers) {
+        if (supplier.id == payment.referenceId) {
+          accountName = supplier.name;
+          accountPhone = supplier.phone;
+          break;
+        }
+      }
+    }
+
+    if (!mounted) return;
+
+    final user = context.read<UserProvider>().currentUser;
+    final createdByName = user?.fullName;
+    final title = VoucherService.voucherTitle(payment.paymentType);
+    final number = VoucherService.voucherNumber(payment);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            height: MediaQuery.of(sheetContext).size.height * .82,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isClient
+                            ? Icons.receipt_long_rounded
+                            : Icons.payments_rounded,
+                        size: 34,
+                        color: Theme.of(sheetContext).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 21,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              'رقم السند: $number',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Theme.of(sheetContext)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: .07),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                'المبلغ',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                '${payment.amount.toStringAsFixed(2)} ريال',
+                                style: TextStyle(
+                                  fontSize: 30,
+                                  fontWeight: FontWeight.w900,
+                                  color: Theme.of(sheetContext)
+                                      .colorScheme
+                                      .primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        _voucherInfoTile(
+                          sheetContext,
+                          Icons.person_outline_rounded,
+                          isClient ? 'العميل' : 'المورد',
+                          accountName,
+                        ),
+                        _voucherInfoTile(
+                          sheetContext,
+                          Icons.calendar_today_rounded,
+                          'التاريخ',
+                          payment.paymentDate.split('T').first,
+                        ),
+                        _voucherInfoTile(
+                          sheetContext,
+                          Icons.account_balance_wallet_outlined,
+                          'طريقة الدفع',
+                          VoucherService.paymentMethodText(
+                            payment.paymentMethod,
+                          ),
+                        ),
+                        if (accountPhone != null &&
+                            accountPhone.trim().isNotEmpty)
+                          _voucherInfoTile(
+                            sheetContext,
+                            Icons.phone_outlined,
+                            'الهاتف',
+                            accountPhone.trim(),
+                          ),
+                        if (payment.referenceNumber != null &&
+                            payment.referenceNumber!.trim().isNotEmpty)
+                          _voucherInfoTile(
+                            sheetContext,
+                            Icons.numbers_rounded,
+                            'رقم الحوالة / التحويل',
+                            payment.referenceNumber!.trim(),
+                          ),
+                        if (payment.notes != null &&
+                            payment.notes!.trim().isNotEmpty)
+                          _voucherInfoTile(
+                            sheetContext,
+                            Icons.notes_rounded,
+                            'ملاحظات',
+                            payment.notes!.trim(),
+                          ),
+                        if (createdByName != null &&
+                            createdByName.trim().isNotEmpty)
+                          _voucherInfoTile(
+                            sheetContext,
+                            Icons.badge_outlined,
+                            'أنشأه',
+                            createdByName.trim(),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            await VoucherService.printVoucher(
+                              payment: payment,
+                              accountName: accountName,
+                              accountPhone: accountPhone,
+                              createdByName: createdByName,
+                            );
+                          },
+                          icon: const Icon(Icons.print_rounded),
+                          label: const Text('طباعة'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () async {
+                            await VoucherService.shareVoucher(
+                              payment: payment,
+                              accountName: accountName,
+                              accountPhone: accountPhone,
+                              createdByName: createdByName,
+                            );
+                          },
+                          icon: const Icon(Icons.picture_as_pdf_rounded),
+                          label: const Text('PDF'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (accountPhone != null && accountPhone.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              final message = '$title رقم $number\n'
+                                  'المبلغ: ${payment.amount.toStringAsFixed(2)} ريال\n'
+                                  '${isClient ? 'العميل' : 'المورد'}: $accountName\n'
+                                  'التاريخ: ${payment.paymentDate.split('T').first}';
+
+                              CommunicationService.sendSMS(
+                                accountPhone!.trim(),
+                                message,
+                              );
+                            },
+                            icon: const Icon(Icons.sms_outlined),
+                            label: const Text('SMS'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              final message = '$title رقم $number\n'
+                                  'المبلغ: ${payment.amount.toStringAsFixed(2)} ريال\n'
+                                  '${isClient ? 'العميل' : 'المورد'}: $accountName\n'
+                                  'التاريخ: ${payment.paymentDate.split('T').first}';
+
+                              CommunicationService.openWhatsApp(
+                                accountPhone!.trim(),
+                                message,
+                              );
+                            },
+                            icon: const Icon(Icons.chat_rounded),
+                            label: const Text('واتساب'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _voucherInfoTile(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String value,
+  ) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 12,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 21,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -719,6 +1037,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
                 return Card(
                   child: ListTile(
+                    onTap: () => _showVoucherPreview(payment),
                     leading: CircleAvatar(
                       child: Icon(
                         payment.paymentType == 'client_payment'

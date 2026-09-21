@@ -499,11 +499,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null) {
         await context.read<UserProvider>().setUser(user);
 
-        try {
-          await SyncService().syncAll();
-        } catch (_) {
-          // فشل المزامنة لا يمنع الدخول إلى التطبيق.
-        }
+        // المزامنة لا يجب أن تمنع الدخول المحلي، خصوصًا بدون إنترنت.
+        // نشغّلها في الخلفية ولا ننتظر اكتمالها.
+        SyncService().syncAll().catchError((_) {});
 
         if (!mounted) return;
 

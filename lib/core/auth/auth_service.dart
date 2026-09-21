@@ -235,7 +235,9 @@ class AuthService {
     final db = await _dbHelper.database;
     final passwordHash = _hashPassword(password);
 
-    // 1. Local login: keeps the app usable offline.
+    // 1. Local login: works completely offline.
+    // إذا كان المستخدم موجودًا محليًا وكلمة المرور صحيحة،
+    // لا ننتظر Firebase أو Firestore حتى يتم الدخول.
     final result = await db.query(
       'users',
       where: 'username = ? AND password_hash = ? AND is_deleted = 0',
@@ -244,102 +246,10 @@ class AuthService {
     );
 
     if (result.isNotEmpty) {
-      final user = User.fromMap(result.first);
-
-      if (user.firebaseEmail != null && user.firebaseEmail!.isNotEmpty) {
-        try {
-          final credential = await _firebaseAuth.signInWithEmailAndPassword(
-            email: user.firebaseEmail!.trim(),
-            password: password,
-          );
-
-          final firebaseUid = credential.user?.uid;
-          if (firebaseUid != null && firebaseUid.isNotEmpty) {
-            final userDoc = await _firestore
-                .collection('businesses')
-                .doc(_businessId)
-                .collection('user_directory')
-                .doc(firebaseUid)
-                .get();
-
-            if (userDoc.exists) {
-              final remote = userDoc.data();
-
-              if (remote != null && remote['is_deleted'] != true) {
-                final permissions = <String, bool>{};
-                final rawPermissions = remote['permissions'];
-
-                if (rawPermissions is Map) {
-                  rawPermissions.forEach((key, value) {
-                    permissions[key.toString()] = value == true;
-                  });
-                }
-
-                final remoteRole = remote['role']?.toString() ?? user.role;
-                // ✅ حماية: إذا كانت صلاحيات Firestore فارغة، استخدم
-                // الصلاحيات الافتراضية حسب الدور (خاصة للأدمن).
-                final effectivePermissions = permissions.isEmpty
-                    ? _defaultPermissionsForRole(remoteRole)
-                    : permissions;
-
-                await db.update(
-                  'users',
-                  {
-                    'firebase_uid': firebaseUid,
-                    'firebase_email': remote['firebase_email']?.toString() ??
-                        user.firebaseEmail,
-                    'username': remote['username']?.toString() ?? user.username,
-                    'full_name':
-                        remote['full_name']?.toString() ?? user.fullName,
-                    'role': remoteRole,
-                    'permissions': User.permissionsToJson(effectivePermissions),
-                    'must_change_password':
-                        remote['must_change_password'] == true ? 1 : 0,
-                    'updated_at': DateTime.now().toIso8601String(),
-                    'is_synced': 0,
-                  },
-                  where: 'id = ? AND is_deleted = 0',
-                  whereArgs: [user.id],
-                );
-              }
-            }
-          }
-        } on firebase_auth.FirebaseAuthException catch (e) {
-          // Allow local login only when Firebase is unreachable.
-          if (e.code == 'network-request-failed') {
-            // Offline mode: continue with the local account.
-          } else {
-            switch (e.code) {
-              case 'invalid-credential':
-              case 'wrong-password':
-              case 'user-not-found':
-                throw StateError('بيانات تسجيل الدخول إلى Firebase غير صحيحة');
-              case 'user-disabled':
-                throw StateError('هذا الحساب معطل في Firebase');
-              case 'too-many-requests':
-                throw StateError('تمت محاولات كثيرة. حاول مرة أخرى لاحقًا');
-              default:
-                throw StateError(
-                  'تعذر تسجيل الدخول إلى Firebase. رمز الخطأ: ${e.code}',
-                );
-            }
-          }
-        }
-      }
-
-      // ✅ ترحيل تلقائي: ضمان وجود login_directory/{username} في Firestore.
-      // عند نجاح الدخول المحلي ومع توفر الإنترنت، نُحدّث دليل الدخول
-      // ليتمكن المستخدم من الدخول من أي جهاز جديد مستقبلًا.
-      // الأخطاء تُتجاهل لأن العملية قد تفشل بدون إنترنت — الدخول المحلي
-      // لا يجب أن يتعطل بسبب مشاكل الشبكة.
-      try {
-        await _publishLoginDirectory(user);
-      } catch (_) {}
-
-      return user;
+      return User.fromMap(result.first);
     }
 
-    // 2. New device: bootstrap login from the public login directory.
+  // 2. New device: bootstrap login from the public login directory.
     // The device does not have a local account yet, so it cannot read
     // the protected user_directory until Firebase authentication succeeds.
     try {
@@ -485,15 +395,19 @@ class AuthService {
 
     final db = await _dbHelper.database;
 
+    // نبحث عن الاسم حتى لو كان المستخدم القديم محذوفًا.
+    // السبب: users.username عليه قيد UNIQUE في SQLite،
+    // لذلك لا يمكن INSERT لاسم سبق استخدامه حتى لو كان is_deleted=1.
     final duplicate = await db.query(
       'users',
-      columns: ['id'],
-      where: 'username = ? AND is_deleted = 0',
+      columns: ['id', 'is_deleted'],
+      where: 'username = ?',
       whereArgs: [cleanUsername],
       limit: 1,
     );
 
-    if (duplicate.isNotEmpty) {
+    if (duplicate.isNotEmpty &&
+        (duplicate.first['is_deleted'] as num?)?.toInt() == 0) {
       throw ArgumentError('اسم المستخدم مستخدم بالفعل');
     }
 
@@ -526,17 +440,36 @@ class AuthService {
       updatedAt: now,
     );
 
-    final localId = await db.insert('users', user.toMap());
+    int localId;
+
+    // إذا كان هناك سجل قديم محذوف بنفس اسم المستخدم،
+    // نعيد استخدامه بدل INSERT حتى لا نصطدم بقيد UNIQUE.
+    if (duplicate.isNotEmpty) {
+      localId = (duplicate.first['id'] as num).toInt();
+
+      await db.update(
+        'users',
+        {
+          ...user.toMap(),
+          'is_deleted': 0,
+          'is_synced': 0,
+        },
+        where: 'id = ?',
+        whereArgs: [localId],
+      );
+    } else {
+      localId = await db.insert(
+        'users',
+        user.toMap(),
+      );
+    }
 
     try {
       await _publishUserDirectory(user);
       await _publishLoginDirectory(user);
     } catch (e) {
-      await db.delete(
-        'users',
-        where: 'id = ?',
-        whereArgs: [localId],
-      );
+      // لا نحذف السجل المحلي هنا؛ الاحتفاظ به أفضل من فقدان
+      // المستخدم إذا حدث خطأ مؤقت في الشبكة.
       rethrow;
     }
 

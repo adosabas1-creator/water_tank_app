@@ -181,6 +181,14 @@ class _UsersScreenState extends State<UsersScreen> {
                         icon: const Icon(Icons.key),
                         onPressed: () => _sendPasswordReset(user),
                       ),
+            IconButton(
+              tooltip: 'حذف المستخدم',
+              icon: const Icon(
+                Icons.delete_outline,
+                color: Colors.red,
+              ),
+              onPressed: () => _deleteUser(user),
+            ),
                     ],
                   ),
                   onTap: () => _showPermissionsDialog(user),
@@ -415,6 +423,79 @@ class _UsersScreenState extends State<UsersScreen> {
     emailCtrl.dispose();
     passwordCtrl.dispose();
     fullNameCtrl.dispose();
+  }
+
+  Future<void> _deleteUser(User user) async {
+    final currentUserId = PermissionService.currentUser?.id;
+
+    if (currentUserId == user.id) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا يمكنك حذف المستخدم الحالي'),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('حذف المستخدم'),
+          content: Text(
+            'هل أنت متأكد من حذف المستخدم:\n\n'
+            '${user.fullName}\n'
+            'اسم المستخدم: ${user.username}\n\n'
+            'سيتم إيقاف حسابه وإزالته من قائمة المستخدمين، '
+            'مع الاحتفاظ بالمبيعات والتقارير القديمة.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('حذف'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final deleted = await _authService.deleteUser(user.id!);
+
+      if (!mounted) return;
+
+      if (deleted) {
+        _refresh();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم حذف المستخدم ${user.fullName} بنجاح'),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر حذف المستخدم'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('حدث خطأ أثناء حذف المستخدم:\n$e'),
+        ),
+      );
+    }
   }
 
   Future<void> _showEditUserDialog(User user) async {

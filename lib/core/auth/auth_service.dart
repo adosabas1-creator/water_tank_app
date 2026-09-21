@@ -618,6 +618,63 @@ class AuthService {
     return true;
   }
 
+  Future<bool> deleteUser(int userId) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
+
+    final currentUserId = PermissionService.currentUser?.id;
+    if (currentUserId == userId) {
+      throw StateError('لا يمكنك حذف المستخدم الحالي');
+    }
+
+    final db = await _dbHelper.database;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return false;
+
+    final user = User.fromMap(rows.first);
+
+    final count = await db.update(
+      'users',
+      {
+        'is_deleted': 1,
+        'is_synced': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+
+    if (count == 0) return false;
+
+    final deletedRows = await db.query(
+      'users',
+      where: 'id = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (deletedRows.isNotEmpty) {
+      final deletedUser = User.fromMap(deletedRows.first);
+
+      // نشر حالة الحذف إلى user_directory حتى يُمنع المستخدم
+      // من تسجيل الدخول على الأجهزة الأخرى.
+      await _publishUserDirectory(deletedUser, isDeleted: true);
+
+      // إزالة اسم المستخدم من دليل تسجيل الدخول.
+      if (user.username.trim().isNotEmpty) {
+        await _deleteLoginDirectoryByUsername(user.username);
+      }
+    }
+
+    return true;
+  }
+
   Future<void> updateDriver(int userId, int? driverId) async {
     PermissionService.requirePermission(PermissionKeys.usersManage);
     final db = await _dbHelper.database;

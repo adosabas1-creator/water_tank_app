@@ -662,9 +662,14 @@ class AuthService {
     if (deletedRows.isNotEmpty) {
       final deletedUser = User.fromMap(deletedRows.first);
 
-      // نشر حالة الحذف إلى user_directory حتى يُمنع المستخدم
-      // من تسجيل الدخول على الأجهزة الأخرى.
-      await _publishUserDirectory(deletedUser, isDeleted: true);
+      // المستخدمون القدامى قد لا يملكون Firebase UID.
+      // في هذه الحالة يكفي حذفهم منطقيًا من قاعدة البيانات المحلية.
+      if (deletedUser.firebaseUid != null &&
+          deletedUser.firebaseUid!.trim().isNotEmpty) {
+        // نشر حالة الحذف إلى user_directory حتى يُمنع المستخدم
+        // من تسجيل الدخول على الأجهزة الأخرى.
+        await _publishUserDirectory(deletedUser, isDeleted: true);
+      }
 
       // إزالة اسم المستخدم من دليل تسجيل الدخول.
       if (user.username.trim().isNotEmpty) {

@@ -546,10 +546,13 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS payments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           sync_id TEXT UNIQUE NOT NULL,
-          client_id INTEGER,
-          supplier_id INTEGER,
-          amount REAL NOT NULL,
           payment_type TEXT NOT NULL,
+          reference_id INTEGER NOT NULL,
+          purchase_invoice_id INTEGER,
+          payment_key TEXT,
+          amount REAL NOT NULL,
+          payment_method TEXT,
+          reference_number TEXT,
           payment_date TEXT NOT NULL,
           notes TEXT,
           created_by INTEGER NOT NULL,
@@ -1470,6 +1473,27 @@ class DatabaseHelper {
     // يعمل بعد جميع ترقيات الإصدارات السابقة.
     if (oldVersion < 29) {
       await _ensureCoreTables(db);
+    }
+
+    // الإصدار 30: إضافة مفتاح فريد لسندات القبض/الصرف.
+    // _safeExec يجعل الترقية آمنة حتى لو كان العمود موجودًا مسبقًا.
+    if (oldVersion < 30) {
+      await _safeExec(
+        db,
+        'ALTER TABLE payments ADD COLUMN purchase_invoice_id INTEGER',
+      );
+      await _safeExec(
+        db,
+        'ALTER TABLE payments ADD COLUMN payment_key TEXT',
+      );
+      await _safeExec(
+        db,
+        'ALTER TABLE payments ADD COLUMN payment_method TEXT',
+      );
+      await _safeExec(
+        db,
+        'ALTER TABLE payments ADD COLUMN reference_number TEXT',
+      );
     }
   }
 }

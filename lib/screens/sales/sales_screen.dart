@@ -23,6 +23,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
   final _quantityController = TextEditingController();
   final _priceController = TextEditingController();
+  final _paidController = TextEditingController();
 
   final _saleService = SaleService();
   final _clientService = ClientService();
@@ -57,12 +58,14 @@ class _SalesScreenState extends State<SalesScreen> {
     _loadData();
     _quantityController.addListener(_refreshTotal);
     _priceController.addListener(_refreshTotal);
+    _paidController.addListener(_refreshTotal);
   }
 
   @override
   void dispose() {
     _quantityController.dispose();
     _priceController.dispose();
+    _paidController.dispose();
     super.dispose();
   }
 
@@ -208,6 +211,26 @@ class _SalesScreenState extends State<SalesScreen> {
     if (price == null || price < 0) return;
 
     final total = quantity * price;
+
+    double paidAmount;
+    if (_clientPaymentStatus == 'paid') {
+      paidAmount = total;
+    } else if (_clientPaymentStatus == 'unpaid') {
+      paidAmount = 0;
+    } else {
+      paidAmount = double.tryParse(_paidController.text.trim()) ?? 0;
+      if (paidAmount <= 0 || paidAmount >= total) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'في السداد الجزئي يجب أن يكون المدفوع أكبر من صفر وأقل من الإجمالي.',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     final now = DateTime.now().toIso8601String();
     final userName =
         user.fullName.trim().isEmpty ? user.username : user.fullName.trim();
@@ -237,7 +260,10 @@ class _SalesScreenState extends State<SalesScreen> {
         updatedAt: now,
       );
 
-      final savedSale = await _saleService.addSale(sale);
+      final savedSale = await _saleService.addSale(
+      sale,
+      paidAmount: paidAmount,
+    );
       if (!mounted) return;
 
       await _loadData();
@@ -268,6 +294,7 @@ class _SalesScreenState extends State<SalesScreen> {
   void _clearForm() {
     _quantityController.clear();
     _priceController.clear();
+    _paidController.clear();
     setState(() {
       _selectedClientId = null;
       _selectedSupplierId = null;
@@ -495,7 +522,7 @@ class _SalesScreenState extends State<SalesScreen> {
               const SizedBox(height: 12),
               InputDecorator(
                 decoration: _decoration('الوحدة'),
-                child: const Text('خزان'),
+                child: const Text('وايت ماء'),
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -562,6 +589,7 @@ class _SalesScreenState extends State<SalesScreen> {
                 decoration: _decoration('حالة دفع العميل'),
                 items: const [
                   DropdownMenuItem(value: 'paid', child: Text('مدفوع')),
+                  DropdownMenuItem(value: 'partial', child: Text('جزئي')),
                   DropdownMenuItem(value: 'unpaid', child: Text('آجل')),
                 ],
                 onChanged: (value) {
@@ -570,6 +598,16 @@ class _SalesScreenState extends State<SalesScreen> {
                   }
                 },
               ),
+              if (_clientPaymentStatus == 'partial') ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _paidController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _decoration('المبلغ المدفوع'),
+                ),
+              ],
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _saving ? null : _saveSale,

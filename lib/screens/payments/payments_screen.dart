@@ -198,8 +198,18 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                 final now = DateTime.now().toIso8601String();
 
                 if (payment == null) {
+                  final syncId = const Uuid().v4();
+
+                  final voucherPrefix = paymentType == 'client_payment' ? 'RC' : 'PV';
+
+                  final paymentKey = '$voucherPrefix-${DateTime.now().millisecondsSinceEpoch}';
+
+
                   final newPayment = Payment(
-                    syncId: const Uuid().v4(),
+
+                    syncId: syncId,
+
+                    paymentKey: paymentKey,
                     paymentType: paymentType,
                     referenceId: referenceId,
                     amount: amount,
@@ -224,6 +234,9 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                   final updatedPayment = Payment(
                     syncId: payment.syncId,
                     id: payment.id,
+                    paymentKey: payment.paymentKey.trim().isEmpty
+                        ? payment.syncId
+                        : payment.paymentKey,
                     paymentType: paymentType,
                     referenceId: referenceId,
                     amount: amount,
@@ -714,7 +727,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                       ),
                     ),
                     title: Text(
-                      '${_paymentTypeText(payment.paymentType)} #${payment.id}',
+                      '${_paymentTypeText(payment.paymentType)} ${payment.paymentKey.trim().isEmpty ? payment.syncId : payment.paymentKey}',
                     ),
                     subtitle: Text(
                       'الاسم: ${_referenceName(payment)}\n'

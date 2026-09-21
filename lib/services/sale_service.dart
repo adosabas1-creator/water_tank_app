@@ -1,22 +1,37 @@
 import '../core/auth/permission_service.dart';
 import '../core/constants/permissions.dart';
-import 'dart:async';
 import '../core/database/database_helper.dart';
-import '../core/network/sync_service.dart';
 import '../models/account_transaction.dart';
+import '../models/payment.dart';
 import '../models/sale.dart';
 
 class SaleService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
 
-  Future<Sale> addSale(Sale sale) async {
+  Future<Sale> addSale(Sale sale, {double? paidAmount}) async {
     PermissionService.requirePermission(PermissionKeys.salesAdd);
     final db = await _dbHelper.database;
 
     if (sale.units <= 0) throw Exception('يجب أن تكون كمية البيع أكبر من صفر.');
     if (sale.totalAmount < 0) throw Exception('إجمالي البيع غير صالح.');
 
-    final savedSale = await db.transaction((txn) async {
+    final effectivePaidAmount = paidAmount ??
+        (sale.clientPaymentStatus == 'paid' ? sale.totalAmount : 0.0);
+
+    if (effectivePaidAmount < 0 ||
+        effectivePaidAmount > sale.totalAmount + 0.000001) {
+      throw ArgumentError('مبلغ المدفوع غير صالح.');
+    }
+
+    if (sale.clientPaymentStatus == 'partial' &&
+        (effectivePaidAmount <= 0 ||
+         effectivePaidAmount >= sale.totalAmount)) {
+      throw ArgumentError(
+        'في السداد الجزئي يجب أن يكون المدفوع أكبر من صفر وأقل من الإجمالي.',
+      );
+    }
+
+    return await db.transaction((txn) async {
       await _validateSaleReferences(txn, sale);
       final allocationResult =
           await _allocateInventoryFIFO(txn, sale.units, sale.supplierId);
@@ -55,6 +70,32 @@ class SaleService {
           txn, saleId, sale.syncId, allocationResult.allocations, now);
       await _createClientDebtIfNeeded(txn, calculatedSale, saleId, now);
 
+      if (calculatedSale.clientId != null &&
+          calculatedSale.clientPaymentStatus == 'partial') {
+        final paymentSyncId =
+            'sale_payment_${calculatedSale.syncId}';
+
+        final payment = Payment(
+          syncId: paymentSyncId,
+          paymentType: 'client_payment',
+          referenceId: calculatedSale.clientId!,
+          paymentKey: paymentSyncId,
+          amount: effectivePaidAmount,
+          paymentDate: calculatedSale.saleDate,
+          notes: 'دفعة من مبيعة ${calculatedSale.saleNumber ?? saleId}',
+          createdBy: calculatedSale.createdBy,
+          createdAt: now,
+          updatedAt: now,
+          isDeleted: false,
+          isSynced: false,
+        );
+
+        await txn.insert(
+          'payments',
+          payment.toMap()..remove('id'),
+        );
+      }
+
       return Sale(
         id: saleId,
         syncId: calculatedSale.syncId,
@@ -81,9 +122,6 @@ class SaleService {
         isSynced: calculatedSale.isSynced,
       );
     });
-
-    unawaited(SyncService().syncAll());
-    return savedSale;
   }
 
   Future<void> _validateSaleReferences(dynamic txn, Sale sale) async {
@@ -273,7 +311,11 @@ class SaleService {
 
   Future<void> _createClientDebtIfNeeded(
       dynamic txn, Sale sale, int saleId, String now) async {
-    if (sale.clientId == null || sale.clientPaymentStatus != 'unpaid') return;
+    if (sale.clientId == null ||
+        (sale.clientPaymentStatus != 'unpaid' &&
+         sale.clientPaymentStatus != 'partial')) {
+      return;
+    }
     final transaction = AccountTransaction(
       accountType: 'client',
       referenceId: sale.clientId!,
@@ -401,8 +443,6 @@ class SaleService {
           txn, sale.id!, oldSale.syncId, allocationResult.allocations, now);
       await _createClientDebtIfNeeded(txn, updatedSale, sale.id!, now);
     });
-
-    unawaited(SyncService().syncAll());
   }
 
   Future<void> deleteSale(int id) async {
@@ -420,6 +460,17 @@ class SaleService {
       await _softDeleteSaleAllocations(txn, sale.id!);
       await _softDeleteClientDebt(txn, sale);
 
+      await txn.update(
+        'payments',
+        {
+          'is_deleted': 1,
+          'is_synced': 0,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'sync_id = ? AND is_deleted = 0',
+        whereArgs: ['sale_payment_${sale.syncId}'],
+      );
+
       final changed = await txn.update(
           'sales',
           {
@@ -431,8 +482,6 @@ class SaleService {
           whereArgs: [id]);
       if (changed != 1) throw StateError('تعذر حذف المبيعة.');
     });
-
-    unawaited(SyncService().syncAll());
   }
 }
 

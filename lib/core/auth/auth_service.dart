@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
@@ -310,6 +311,14 @@ class AuthService {
       final effectivePermissions = permissions.isEmpty
           ? _defaultPermissionsForRole(remoteRole)
           : permissions;
+
+      debugPrint(
+        'AUTH DEBUG: username=$cleanUsername '
+        'role=$remoteRole '
+        'rawPermissions=$rawPermissions '
+        'parsedPermissions=$permissions '
+        'effectivePermissions=$effectivePermissions',
+      );
 
       final now = DateTime.now().toIso8601String();
 

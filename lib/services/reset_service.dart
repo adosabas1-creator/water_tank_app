@@ -1,6 +1,7 @@
 import '../core/auth/user_provider.dart';
 import '../core/auth/permission_service.dart';
 import '../core/database/database_helper.dart';
+import '../core/network/sync_service.dart';
 
 class ResetService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -12,5 +13,9 @@ class ResetService {
     }
     PermissionService.requireAdmin();
     await _dbHelper.resetTransactionalData();
+
+    // بعد نجاح التصفير محليًا، نرفع حالات الحذف إلى Firestore
+    // حتى لا تعود البيانات القديمة إلى هذا الجهاز أو الأجهزة الأخرى.
+    await SyncService().syncAll();
   }
 }

@@ -191,18 +191,45 @@ class BackupService {
   Future<bool> _isValidDatabase(File file) async {
     if (!await file.exists()) return false;
 
-    Database? db;
+    const requiredTables = <String>{
+      'users',
+      'clients',
+      'suppliers',
+      'drivers',
+      'tanks',
+      'filling_operations',
+      'sales',
+      'payments',
+      'account_transactions',
+      'purchase_invoices',
+      'purchase_items',
+      'inventory_layers',
+      'sale_inventory_allocations',
+      'expenses',
+      'salaries',
+      'operation_logs',
+    };
 
+    Database? db;
     try {
       db = await openReadOnlyDatabase(file.path);
 
       final tables = await db.rawQuery(
         "SELECT name FROM sqlite_master "
         "WHERE type='table' AND name IN "
-        "('users','clients','suppliers','drivers','sales')",
+        "('users','clients','suppliers','drivers','tanks',"
+        "'filling_operations','sales','payments','account_transactions',"
+        "'purchase_invoices','purchase_items','inventory_layers',"
+        "'sale_inventory_allocations','expenses','salaries','operation_logs')",
       );
 
-      return tables.length >= 5;
+      final foundTables = tables
+          .map((row) => row['name']?.toString())
+          .whereType<String>()
+          .toSet();
+
+      return foundTables.length == requiredTables.length &&
+          foundTables.containsAll(requiredTables);
     } catch (_) {
       return false;
     } finally {

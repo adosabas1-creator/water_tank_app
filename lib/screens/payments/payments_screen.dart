@@ -87,9 +87,9 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
   String _paymentTypeText(String type) {
     if (type == 'client_payment') {
-      return 'دفعة عميل';
+      return 'سند قبض';
     }
-    return 'دفعة مورد';
+    return 'سند صرف';
   }
 
   Future<void> _showPaymentDialog({
@@ -294,7 +294,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 
             return AlertDialog(
               title: Text(
-                payment == null ? 'إضافة دفعة' : 'تعديل الدفعة',
+                payment == null ? 'إصدار سند مالي' : 'تعديل السند',
               ),
               content: SingleChildScrollView(
                 child: Form(
@@ -311,11 +311,11 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                         items: const [
                           DropdownMenuItem(
                             value: 'client_payment',
-                            child: Text('دفعة عميل'),
+                            child: Text('سند قبض'),
                           ),
                           DropdownMenuItem(
                             value: 'supplier_payment',
-                            child: Text('دفعة مورد'),
+                            child: Text('سند صرف'),
                           ),
                         ],
                         onChanged: saving || accountLocked
@@ -970,7 +970,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('المدفوعات'),
+        title: const Text('السندات المالية'),
         actions: [
           IconButton(
             onPressed: _refresh,
@@ -1001,7 +1001,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'حدث خطأ أثناء تحميل المدفوعات\n${snapshot.error}',
+                      'حدث خطأ أثناء تحميل السندات المالية\n${snapshot.error}',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
@@ -1090,7 +1090,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showPaymentDialog(),
         icon: const Icon(Icons.add),
-        label: const Text('إضافة دفعة'),
+        label: const Text('إصدار سند'),
       ),
     );
   }

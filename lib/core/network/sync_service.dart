@@ -114,6 +114,9 @@ class SyncService {
         return _currentUser?.role == 'admin' ||
             _currentUser?.role == 'deputy_manager';
 
+      case 'operation_logs':
+        return _hasPermission(PermissionKeys.logsView);
+
       default:
         return false;
     }
@@ -245,12 +248,40 @@ class SyncService {
               : null;
       data['created_by_sync_id'] =
           await _localSyncId(db, 'users', row['created_by']);
+      data['purchase_invoice_sync_id'] =
+          await _localSyncId(db, 'purchase_invoices', row['purchase_invoice_id']);
       data.remove('reference_id');
       data.remove('created_by');
+      data.remove('purchase_invoice_id');
     } else if (table == 'expenses') {
       data['created_by_sync_id'] =
           await _localSyncId(db, 'users', row['created_by']);
       data.remove('created_by');
+    } else if (table == 'operation_logs') {
+      data['user_sync_id'] =
+          row['user_sync_id']?.toString().isNotEmpty == true
+              ? row['user_sync_id']?.toString()
+              : await _localSyncId(db, 'users', row['user_id']);
+
+      final recordTable = switch (row['table_name']?.toString()) {
+        'clients' => 'clients',
+        'suppliers' => 'suppliers',
+        _ => null,
+      };
+
+      data['record_sync_id'] =
+          row['record_sync_id']?.toString().isNotEmpty == true
+              ? row['record_sync_id']?.toString()
+              : recordTable == null
+                  ? null
+                  : await _localSyncId(
+                      db,
+                      recordTable,
+                      row['record_id'],
+                    );
+
+      data.remove('user_id');
+      data.remove('record_id');
     }
     return data;
   }
@@ -532,13 +563,56 @@ class SyncService {
       if (!await requireRef('created_by_sync_id', 'users', 'created_by')) {
         return null;
       }
+      if (data['purchase_invoice_sync_id'] != null) {
+        if (!await requireRef(
+            'purchase_invoice_sync_id',
+            'purchase_invoices',
+            'purchase_invoice_id')) {
+          return null;
+        }
+      }
       data.remove('reference_sync_id');
       data.remove('created_by_sync_id');
+      data.remove('purchase_invoice_sync_id');
     } else if (table == 'expenses') {
       if (!await requireRef('created_by_sync_id', 'users', 'created_by')) {
         return null;
       }
       data.remove('created_by_sync_id');
+    } else if (table == 'operation_logs') {
+      final userSyncId = data['user_sync_id']?.toString();
+      if (userSyncId == null || userSyncId.isEmpty) {
+        return null;
+      }
+      if (!await requireRef('user_sync_id', 'users', 'user_id')) {
+        return null;
+      }
+
+      final recordTable = switch (data['table_name']?.toString()) {
+        'clients' => 'clients',
+        'suppliers' => 'suppliers',
+        _ => null,
+      };
+
+      if (recordTable == null) {
+        return null;
+      }
+
+      final recordSyncId = data['record_sync_id']?.toString();
+      if (recordSyncId == null || recordSyncId.isEmpty) {
+        return null;
+      }
+
+      if (!await requireRef(
+        'record_sync_id',
+        recordTable,
+        'record_id',
+      )) {
+        return null;
+      }
+
+      data.remove('user_sync_id');
+      data.remove('record_sync_id');
     }
     data['sync_id'] = remote['sync_id'];
     data['is_synced'] = 1;
@@ -584,6 +658,9 @@ class SyncService {
       case 'expenses':
       case 'salaries':
         return isManagement;
+
+      case 'operation_logs':
+        return _hasPermission(PermissionKeys.logsView);
 
       default:
         return false;
@@ -641,6 +718,21 @@ class SyncService {
           }
           continue;
         }
+
+          final remoteIsDeleted =
+              remote['is_deleted'] == true ||
+              remote['is_deleted'] == 1 ||
+              remote['is_deleted']?.toString().toLowerCase() == 'true';
+
+          if (existing.isEmpty && remoteIsDeleted) {
+            if (table == 'suppliers' || table == 'clients') {
+              debugPrint(
+                '$table DOWNLOAD SKIPPED: remote record is deleted '
+                'sync_id=$syncId',
+              );
+            }
+            continue;
+          }
 
         if (table == 'suppliers' || table == 'clients') {
           debugPrint(
@@ -767,6 +859,7 @@ class SyncService {
         'expenses',
         'salaries',
         'filling_operations',
+        'operation_logs',
       ];
 
       for (final table in order) {

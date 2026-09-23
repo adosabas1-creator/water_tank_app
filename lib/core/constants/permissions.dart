@@ -27,6 +27,7 @@ class PermissionKeys {
 
   static const String usersManage = 'users_manage';
   static const String permissionsManage = 'permissions_manage';
+  static const String logsView = 'logs_view';
 }
 
 class DefaultPermissions {
@@ -60,6 +61,7 @@ class DefaultPermissions {
 
       PermissionKeys.usersManage: true,
       PermissionKeys.permissionsManage: true,
+    PermissionKeys.logsView: true,
     };
   }
 
@@ -93,6 +95,7 @@ class DefaultPermissions {
 
       PermissionKeys.usersManage: false,
       PermissionKeys.permissionsManage: false,
+    PermissionKeys.logsView: true,
     };
   }
 
@@ -126,6 +129,7 @@ class DefaultPermissions {
 
       PermissionKeys.usersManage: false,
       PermissionKeys.permissionsManage: false,
+    PermissionKeys.logsView: false,
     };
   }
 

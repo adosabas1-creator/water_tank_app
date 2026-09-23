@@ -22,6 +22,7 @@ class FinancialMigration {
       await txn.execute('''
         CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_payment_key
         ON payments(payment_key)
+        WHERE is_deleted = 0
       ''');
 
       await txn.execute('''

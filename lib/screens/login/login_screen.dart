@@ -272,10 +272,9 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
         return;
       }
 
-      final success = await _authService.resetPasswordWithRecoveryCode(
+      final success = await _authService.sendPasswordResetByRecoveryCode(
         username: _usernameController.text.trim(),
         recoveryCode: _recoveryCodeController.text.trim(),
-        newPassword: _newPasswordController.text,
       );
 
       if (!mounted) return;
@@ -287,7 +286,7 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'تم تغيير كلمة المرور بنجاح، يمكنك تسجيل الدخول الآن',
+              'تم إرسال رابط استعادة كلمة المرور إلى البريد المرتبط بالحساب',
             ),
           ),
         );

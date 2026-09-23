@@ -13,10 +13,31 @@ class AccountTransactionService {
     if (transaction.accountType != 'supplier' && transaction.accountType != 'client') {
       throw ArgumentError('نوع الحساب غير صالح.');
     }
+
+    final referenceTable =
+        transaction.accountType == 'supplier' ? 'suppliers' : 'clients';
+
+    final db = await _dbHelper.database;
+
+    final referenceRows = await db.query(
+      referenceTable,
+      columns: ['id'],
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [transaction.referenceId],
+      limit: 1,
+    );
+
+    if (referenceRows.isEmpty) {
+      throw StateError(
+        transaction.accountType == 'supplier'
+            ? 'المورد غير موجود أو محذوف.'
+            : 'العميل غير موجود أو محذوف.',
+      );
+    }
+
     if (transaction.purchaseInvoiceId != null) {
       throw StateError('حركة فاتورة الشراء تُدار من خلال خدمة المشتريات فقط.');
     }
-    final db = await _dbHelper.database;
     final existing = await db.query(
       'account_transactions',
       columns: ['id', 'is_deleted'],

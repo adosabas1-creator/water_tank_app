@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../core/auth/permission_service.dart';
+import '../../core/constants/permissions.dart';
 import '../../models/operation_log.dart';
 import '../../services/operation_log_service.dart';
 
@@ -20,6 +22,19 @@ class _LogsScreenState extends State<LogsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = PermissionService.currentUser;
+    final canViewLogs =
+        PermissionService.hasPermission(user, PermissionKeys.logsView);
+
+    if (!canViewLogs) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('سجل العمليات')),
+        body: const Center(
+          child: Text('ليس لديك صلاحية عرض سجل العمليات.'),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('سجل العمليات')),
       body: FutureBuilder<List<OperationLog>>(
@@ -39,7 +54,11 @@ class _LogsScreenState extends State<LogsScreen> {
                 ),
                 title: Text('${log.tableName} #${log.recordId}'),
                 subtitle: Text(log.details ?? ''),
-                trailing: Text(log.timestamp.substring(0, 16)),
+                trailing: Text(
+                      log.timestamp.length >= 16
+                          ? log.timestamp.substring(0, 16)
+                          : log.timestamp,
+                    ),
               );
             },
           );

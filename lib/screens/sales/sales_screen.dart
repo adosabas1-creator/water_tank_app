@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/auth/user_provider.dart';
 import '../../core/auth/permission_service.dart';
@@ -48,7 +49,8 @@ class _SalesScreenState extends State<SalesScreen> {
     super.initState();
 
     final user = context.read<UserProvider>().currentUser;
-    if (PermissionService.hasPermission(user, PermissionKeys.salesView) == false) {
+    if (PermissionService.hasPermission(user, PermissionKeys.salesView) ==
+        false) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) Navigator.of(context).pop();
       });
@@ -181,7 +183,8 @@ class _SalesScreenState extends State<SalesScreen> {
     if (PermissionService.hasPermission(
           currentUser,
           PermissionKeys.salesAdd,
-        ) == false) {
+        ) ==
+        false) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('ليس لديك صلاحية إضافة المبيعات')),
       );
@@ -239,7 +242,7 @@ class _SalesScreenState extends State<SalesScreen> {
 
     try {
       final sale = Sale(
-        syncId: 'sale_${DateTime.now().microsecondsSinceEpoch}',
+        syncId: const Uuid().v4(),
         saleNumber: 'S-${DateTime.now().millisecondsSinceEpoch}',
         clientId: _selectedClientId,
         tankId: null,
@@ -261,9 +264,9 @@ class _SalesScreenState extends State<SalesScreen> {
       );
 
       final savedSale = await _saleService.addSale(
-      sale,
-      paidAmount: paidAmount,
-    );
+        sale,
+        paidAmount: paidAmount,
+      );
       if (!mounted) return;
 
       await _loadData();
@@ -539,7 +542,8 @@ class _SalesScreenState extends State<SalesScreen> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _priceController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
                 decoration: _decoration('سعر الوحدة'),
                 validator: (value) {
                   final number = double.tryParse(value?.trim() ?? '');
@@ -558,12 +562,14 @@ class _SalesScreenState extends State<SalesScreen> {
                       const Expanded(
                         child: Text(
                           'الإجمالي',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                       ),
                       Text(
                         _formatNumber(_total),
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),

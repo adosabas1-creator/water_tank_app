@@ -11,25 +11,10 @@ class SaleService {
   Future<Sale> addSale(Sale sale, {double? paidAmount}) async {
     PermissionService.requirePermission(PermissionKeys.salesAdd);
     final db = await _dbHelper.database;
-
-    if (sale.units <= 0) throw Exception('يجب أن تكون كمية البيع أكبر من صفر.');
-    if (sale.totalAmount < 0) throw Exception('إجمالي البيع غير صالح.');
-
-    final effectivePaidAmount = paidAmount ??
-        (sale.clientPaymentStatus == 'paid' ? sale.totalAmount : 0.0);
-
-    if (effectivePaidAmount < 0 ||
-        effectivePaidAmount > sale.totalAmount + 0.000001) {
-      throw ArgumentError('مبلغ المدفوع غير صالح.');
-    }
-
-    if (sale.clientPaymentStatus == 'partial' &&
-        (effectivePaidAmount <= 0 ||
-         effectivePaidAmount >= sale.totalAmount)) {
-      throw ArgumentError(
-        'في السداد الجزئي يجب أن يكون المدفوع أكبر من صفر وأقل من الإجمالي.',
-      );
-    }
+    final effectivePaidAmount = _validateSaleInput(
+      sale,
+      paidAmount: paidAmount,
+    );
 
     return await db.transaction((txn) async {
       await _validateSaleReferences(txn, sale);
@@ -72,8 +57,7 @@ class SaleService {
 
       if (calculatedSale.clientId != null &&
           calculatedSale.clientPaymentStatus == 'partial') {
-        final paymentSyncId =
-            'sale_payment_${calculatedSale.syncId}';
+        final paymentSyncId = 'sale_payment_${calculatedSale.syncId}';
 
         final payment = Payment(
           syncId: paymentSyncId,
@@ -122,6 +106,86 @@ class SaleService {
         isSynced: calculatedSale.isSynced,
       );
     });
+  }
+
+  double _validateSaleInput(
+    Sale sale, {
+    double? paidAmount,
+  }) {
+    if (sale.units <= 0) {
+      throw ArgumentError('يجب أن تكون كمية البيع أكبر من صفر.');
+    }
+
+    if (sale.salePrice <= 0) {
+      throw ArgumentError('سعر البيع يجب أن يكون أكبر من صفر.');
+    }
+
+    if (sale.totalAmount <= 0) {
+      throw ArgumentError('إجمالي البيع يجب أن يكون أكبر من صفر.');
+    }
+
+    final calculatedTotal = sale.units * sale.salePrice;
+
+    if ((calculatedTotal - sale.totalAmount).abs() > 0.000001) {
+      throw ArgumentError(
+        'إجمالي البيع لا يطابق الكمية × سعر الوحدة.',
+      );
+    }
+
+    const validStatuses = {'paid', 'partial', 'unpaid'};
+
+    final clientStatus = sale.clientPaymentStatus ?? sale.paymentStatus;
+
+    if (!validStatuses.contains(clientStatus)) {
+      throw ArgumentError('حالة دفع العميل غير صالحة.');
+    }
+
+    if (!validStatuses.contains(sale.paymentStatus)) {
+      throw ArgumentError('حالة الدفع غير صالحة.');
+    }
+
+    if (sale.clientPaymentStatus != null &&
+        sale.paymentStatus != sale.clientPaymentStatus) {
+      throw ArgumentError(
+        'حالة الدفع القديمة والجديدة غير متطابقة.',
+      );
+    }
+
+    if (sale.clientId == null && clientStatus != 'paid') {
+      throw ArgumentError(
+        'البيع بدون عميل يجب أن يكون مدفوعًا بالكامل.',
+      );
+    }
+
+    final effectivePaidAmount =
+        paidAmount ?? (clientStatus == 'paid' ? sale.totalAmount : 0.0);
+
+    if (effectivePaidAmount < 0 ||
+        effectivePaidAmount > sale.totalAmount + 0.000001) {
+      throw ArgumentError('مبلغ المدفوع غير صالح.');
+    }
+
+    if (clientStatus == 'paid' &&
+        (effectivePaidAmount - sale.totalAmount).abs() > 0.000001) {
+      throw ArgumentError(
+        'عند اختيار مدفوع بالكامل يجب أن يساوي المدفوع إجمالي المبيعة.',
+      );
+    }
+
+    if (clientStatus == 'unpaid' && effectivePaidAmount.abs() > 0.000001) {
+      throw ArgumentError(
+        'عند اختيار غير مدفوع يجب أن يكون المبلغ المدفوع صفرًا.',
+      );
+    }
+
+    if (clientStatus == 'partial' &&
+        (effectivePaidAmount <= 0 || effectivePaidAmount >= sale.totalAmount)) {
+      throw ArgumentError(
+        'في السداد الجزئي يجب أن يكون المدفوع أكبر من صفر وأقل من الإجمالي.',
+      );
+    }
+
+    return effectivePaidAmount;
   }
 
   Future<void> _validateSaleReferences(dynamic txn, Sale sale) async {
@@ -313,7 +377,7 @@ class SaleService {
       dynamic txn, Sale sale, int saleId, String now) async {
     if (sale.clientId == null ||
         (sale.clientPaymentStatus != 'unpaid' &&
-         sale.clientPaymentStatus != 'partial')) {
+            sale.clientPaymentStatus != 'partial')) {
       return;
     }
     final transaction = AccountTransaction(
@@ -385,11 +449,8 @@ class SaleService {
     return null;
   }
 
-  Future<void> updateSale(Sale sale) async {
+  Future<void> updateSale(Sale sale, {double? paidAmount}) async {
     PermissionService.requirePermission(PermissionKeys.salesEdit);
-    if (sale.id == null) throw Exception('رقم البيع غير موجود.');
-    if (sale.units <= 0) throw Exception('يجب أن تكون كمية البيع أكبر من صفر.');
-    if (sale.totalAmount < 0) throw Exception('إجمالي البيع غير صالح.');
 
     final db = await _dbHelper.database;
     await db.transaction((txn) async {
@@ -398,7 +459,48 @@ class SaleService {
       if (oldRows.isEmpty) throw Exception('البيع غير موجود أو تم حذفه.');
       final oldSale = Sale.fromMap(oldRows.first);
 
+      final oldPaymentRows = await txn.query(
+        'payments',
+        columns: ['id', 'amount'],
+        where: 'sync_id = ? AND payment_type = ? AND is_deleted = 0',
+        whereArgs: [
+          'sale_payment_${oldSale.syncId}',
+          'client_payment',
+        ],
+        limit: 1,
+      );
+
+      final oldPaymentId = oldPaymentRows.isNotEmpty
+          ? (oldPaymentRows.first['id'] as num).toInt()
+          : null;
+
+      final oldPaymentAmount = oldPaymentRows.isNotEmpty
+          ? (oldPaymentRows.first['amount'] as num).toDouble()
+          : null;
+
+      final validationPaidAmount = sale.clientPaymentStatus == 'partial'
+          ? (paidAmount ?? oldPaymentAmount)
+          : paidAmount;
+
+      final effectivePaidAmount = _validateSaleInput(
+        sale,
+        paidAmount: validationPaidAmount,
+      );
+
       await _validateSaleReferences(txn, sale);
+
+      if (oldPaymentId != null) {
+        await txn.update(
+          'payments',
+          {
+            'is_deleted': 1,
+            'is_synced': 0,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'id = ? AND is_deleted = 0',
+          whereArgs: [oldPaymentId],
+        );
+      }
       await _restoreSaleInventory(txn, oldSale.id!);
       await _softDeleteSaleAllocations(txn, oldSale.id!);
       await _softDeleteClientDebt(txn, oldSale);
@@ -442,6 +544,31 @@ class SaleService {
       await _insertAllocations(
           txn, sale.id!, oldSale.syncId, allocationResult.allocations, now);
       await _createClientDebtIfNeeded(txn, updatedSale, sale.id!, now);
+
+      if (updatedSale.clientId != null &&
+          updatedSale.clientPaymentStatus == 'partial') {
+        final paymentSyncId = 'sale_payment_${updatedSale.syncId}';
+
+        final payment = Payment(
+          syncId: paymentSyncId,
+          paymentType: 'client_payment',
+          referenceId: updatedSale.clientId!,
+          paymentKey: paymentSyncId,
+          amount: effectivePaidAmount,
+          paymentDate: updatedSale.saleDate,
+          notes: 'دفعة من مبيعة ${updatedSale.saleNumber ?? sale.id}',
+          createdBy: updatedSale.createdBy,
+          createdAt: now,
+          updatedAt: now,
+          isDeleted: false,
+          isSynced: false,
+        );
+
+        await txn.insert(
+          'payments',
+          payment.toMap()..remove('id'),
+        );
+      }
     });
   }
 

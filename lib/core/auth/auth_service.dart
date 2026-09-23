@@ -861,34 +861,29 @@ class AuthService {
     return result.isNotEmpty;
   }
 
-  Future<bool> resetPasswordWithRecoveryCode({
+  Future<bool> sendPasswordResetByRecoveryCode({
     required String username,
     required String recoveryCode,
-    required String newPassword,
   }) async {
-    if (newPassword.length < 6) {
-      throw ArgumentError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
-    }
     final db = await _dbHelper.database;
     final result = await db.query(
       'users',
-      columns: ['id'],
+      columns: ['id', 'firebase_email'],
       where: 'username = ? AND recovery_code_hash = ? AND is_deleted = 0',
       whereArgs: [username.trim(), _hashPassword(recoveryCode.trim())],
       limit: 1,
     );
+
     if (result.isEmpty) return false;
 
-    await db.update(
-      'users',
-      {
-        'password_hash': _hashPassword(newPassword),
-        'updated_at': DateTime.now().toIso8601String(),
-        'is_synced': 0,
-      },
-      where: 'id = ? AND is_deleted = 0',
-      whereArgs: [result.first['id']],
-    );
+    final email = result.first['firebase_email']?.toString().trim() ?? '';
+    if (email.isEmpty || !email.contains('@')) {
+      throw StateError(
+        'لا يوجد بريد إلكتروني مرتبط بهذا الحساب لاستعادة كلمة المرور',
+      );
+    }
+
+    await sendPasswordResetEmail(email);
     return true;
   }
 

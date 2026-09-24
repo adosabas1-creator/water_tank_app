@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/auth/user_provider.dart';
 import '../../core/auth/permission_service.dart';
+import '../../core/network/sync_service.dart';
 import '../../core/constants/permissions.dart';
 import '../../models/client.dart';
 import '../../models/sale.dart';
@@ -267,7 +268,9 @@ class _SalesScreenState extends State<SalesScreen> {
         sale,
         paidAmount: paidAmount,
       );
-      if (!mounted) return;
+      SyncService().syncCriticalSales().catchError((_) {});
+
+    if (!mounted) return;
 
       await _loadData();
 
@@ -668,7 +671,8 @@ class _SalesScreenState extends State<SalesScreen> {
                     ),
                     subtitle: Text(
                       '${_supplierName(sale.supplierId)} • ${sale.saleDate} • '
-                      'العميل: ${_paymentLabel(sale.clientPaymentStatus ?? sale.paymentStatus)}',
+                      'العميل: ${_paymentLabel(sale.clientPaymentStatus ?? sale.paymentStatus)}\n'
+                      'قام بالبيع: ${sale.createdByName ?? 'غير محدد'}',
                     ),
                   ),
                 ),

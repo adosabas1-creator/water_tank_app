@@ -289,42 +289,98 @@ class SyncService {
   Future<void> _uploadTable(String table) async {
     if (!_canUploadTable(table)) return;
     if (!await _ready()) return;
+
     final db = await _dbHelper.database;
-    final rows = await db.query(table, where: 'is_synced = 0');
-    for (final row in rows) {
-      final syncId = row['sync_id']?.toString();
-      if (syncId == null || syncId.isEmpty) continue;
+    final rows = await db.query(
+      table,
+      where: 'is_synced = 0',
+    );
+
+    if (rows.isEmpty) return;
+
+    final collection = table == 'users'
+        ? _firestore
+            .collection('businesses')
+            .doc(businessId)
+            .collection('user_directory')
+        : _collection(table);
+
+    const batchSize = 450;
+
+    for (var startIndex = 0;
+        startIndex < rows.length;
+        startIndex += batchSize) {
+      final endIndex =
+          (startIndex + batchSize < rows.length)
+              ? startIndex + batchSize
+              : rows.length;
+
+      final batchRows = rows.sublist(startIndex, endIndex);
+      final batch = _firestore.batch();
+
+      final uploadedRows = <Map<String, dynamic>>[];
+
+      for (final row in batchRows) {
+        final syncId = row['sync_id']?.toString();
+        if (syncId == null || syncId.isEmpty) continue;
+
+        try {
+          final data = await _uploadData(db, table, row);
+
+          final documentId = table == 'users'
+              ? row['firebase_uid']?.toString()
+              : syncId;
+
+          if (documentId == null || documentId.isEmpty) {
+            debugPrint('$table upload skipped: missing Firebase UID');
+            continue;
+          }
+
+          batch.set(
+            collection.doc(documentId),
+            data,
+            SetOptions(merge: true),
+          );
+
+          uploadedRows.add(row);
+        } catch (e) {
+          debugPrint('$table upload preparation error: $e');
+        }
+      }
+
+      if (uploadedRows.isEmpty) continue;
+
       try {
-        final data = await _uploadData(db, table, row);
+        await batch.commit();
 
-        final collection = table == 'users'
-            ? _firestore
-                .collection('businesses')
-                .doc(businessId)
-                .collection('user_directory')
-            : _collection(table);
+        await db.transaction((txn) async {
+          for (final row in uploadedRows) {
+            final current = await txn.query(
+              table,
+              columns: ['updated_at'],
+              where: 'id = ?',
+              whereArgs: [row['id']],
+              limit: 1,
+            );
 
-        final documentId =
-            table == 'users' ? row['firebase_uid']?.toString() : syncId;
+            if (current.isNotEmpty &&
+                current.first['updated_at'] == row['updated_at']) {
+              await txn.update(
+                table,
+                {'is_synced': 1},
+                where: 'id = ?',
+                whereArgs: [row['id']],
+              );
+            }
+          }
+        });
 
-        if (documentId == null || documentId.isEmpty) {
-          debugPrint('$table upload skipped: missing Firebase UID');
-          continue;
-        }
-
-        await collection.doc(documentId).set(data, SetOptions(merge: true));
-        final current = await db.query(table,
-            columns: ['updated_at'],
-            where: 'id = ?',
-            whereArgs: [row['id']],
-            limit: 1);
-        if (current.isNotEmpty &&
-            current.first['updated_at'] == row['updated_at']) {
-          await db.update(table, {'is_synced': 1},
-              where: 'id = ?', whereArgs: [row['id']]);
-        }
-      } catch (e) {
-        debugPrint('$table upload error: $e');
+        debugPrint(
+          '$table batch upload completed: ${uploadedRows.length} rows',
+        );
+      } catch (e, stackTrace) {
+        debugPrint('$table batch upload error: $e');
+        debugPrint('$stackTrace');
       }
     }
   }
@@ -816,6 +872,86 @@ class SyncService {
   Future<void> downloadTable(String tableName) => _downloadTable(tableName);
 
   bool _syncInProgress = false;
+  bool _criticalSyncRequested = false;
+
+  Future<void> syncCriticalSales() async {
+    _criticalSyncRequested = true;
+    if (_syncInProgress) {
+      debugPrint('Critical sync waiting: another sync is already in progress');
+
+      while (_syncInProgress) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+
+      debugPrint('Critical sync wait completed');
+    }
+
+    if (!await _ready()) {
+      _criticalSyncRequested = false;
+      debugPrint('Critical sync: NOT READY');
+      return;
+    }
+
+    _syncInProgress = true;
+    try {
+      const tables = [
+      'sales',
+      'sale_inventory_allocations',
+      'account_transactions',
+      'payments',
+      'clients',
+      'suppliers',
+    ];
+
+      final criticalSyncStopwatch = Stopwatch()..start();
+
+      for (final table in tables) {
+        final tableStopwatch = Stopwatch()..start();
+        debugPrint('CRITICAL SYNC UPLOAD START table=$table');
+        await _uploadTable(table);
+        tableStopwatch.stop();
+        debugPrint(
+          'CRITICAL SYNC UPLOAD DONE table=$table '
+          'elapsedMs=${tableStopwatch.elapsedMilliseconds}',
+        );
+      }
+
+      final uploadElapsedMs = criticalSyncStopwatch.elapsedMilliseconds;
+      debugPrint(
+        'CRITICAL SYNC UPLOAD TOTAL elapsedMs=$uploadElapsedMs',
+      );
+
+      for (final table in tables) {
+        final tableStopwatch = Stopwatch()..start();
+        debugPrint('CRITICAL SYNC DOWNLOAD START table=$table');
+        await _downloadTable(table);
+        tableStopwatch.stop();
+        debugPrint(
+          'CRITICAL SYNC DOWNLOAD DONE table=$table '
+          'elapsedMs=${tableStopwatch.elapsedMilliseconds}',
+        );
+      }
+
+      final totalElapsedMs = criticalSyncStopwatch.elapsedMilliseconds;
+      final downloadElapsedMs = totalElapsedMs - uploadElapsedMs;
+
+      debugPrint(
+        'CRITICAL SYNC DOWNLOAD TOTAL elapsedMs=$downloadElapsedMs',
+      );
+      debugPrint(
+        'CRITICAL SYNC TOTAL elapsedMs=$totalElapsedMs',
+      );
+      criticalSyncStopwatch.stop();
+
+      debugPrint('CRITICAL SYNC COMPLETED SUCCESSFULLY');
+    } catch (e, stackTrace) {
+      debugPrint('Critical sync failed: $e');
+      debugPrint('$stackTrace');
+    } finally {
+      _criticalSyncRequested = false;
+      _syncInProgress = false;
+    }
+  }
 
   Future<void> syncAll() async {
     if (_syncInProgress) {
@@ -844,31 +980,45 @@ class SyncService {
       } catch (_) {}
 
       const order = [
-        'suppliers',
-        'clients',
-        'drivers',
-        'users',
-        'tanks',
-        'purchase_invoices',
-        'purchase_items',
-        'inventory_layers',
-        'sales',
-        'sale_inventory_allocations',
-        'account_transactions',
-        'payments',
-        'expenses',
-        'salaries',
-        'filling_operations',
-        'operation_logs',
-      ];
+      'sales',
+      'sale_inventory_allocations',
+      'account_transactions',
+      'payments',
+      'suppliers',
+      'clients',
+      'drivers',
+      'users',
+      'tanks',
+      'purchase_invoices',
+      'purchase_items',
+      'inventory_layers',
+      'expenses',
+      'salaries',
+      'filling_operations',
+      'operation_logs',
+    ];
 
       for (final table in order) {
+        if (_criticalSyncRequested) {
+          debugPrint(
+            'SYNC DEBUG: critical sync requested; stopping full upload early',
+          );
+          break;
+        }
+
         debugPrint('SYNC DEBUG: UPLOAD START table=$table');
         await _uploadTable(table);
         debugPrint('SYNC DEBUG: UPLOAD DONE table=$table');
       }
 
       for (final table in order) {
+        if (_criticalSyncRequested) {
+          debugPrint(
+            'SYNC DEBUG: critical sync requested; stopping full download early',
+          );
+          break;
+        }
+
         debugPrint('SYNC DEBUG: DOWNLOAD START table=$table');
         await _downloadTable(table);
         debugPrint('SYNC DEBUG: DOWNLOAD DONE table=$table');

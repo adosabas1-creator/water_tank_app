@@ -23,6 +23,7 @@ class SyncService {
   final ConnectivityService _connectivity = ConnectivityService();
 
   StreamSubscription<bool>? _connectivitySubscription;
+  Timer? _periodicSyncTimer;
   bool _autoSyncStarted = false;
 
   static const String businessId = 'alborai_water_tank';
@@ -42,8 +43,16 @@ class SyncService {
       syncAll();
     });
 
+    _periodicSyncTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) {
+        syncAll();
+      },
+    );
+
     assert(_connectivitySubscription != null);
-    debugPrint('Automatic sync listener started');
+    assert(_periodicSyncTimer != null);
+    debugPrint('Automatic sync listener started (connectivity + 10s periodic)');
   }
 
   Future<bool> _ready() async =>

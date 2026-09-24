@@ -976,7 +976,17 @@ class SyncService {
 
   Future<void> _refreshCurrentUserPermissions() async {
     final firebaseUser = _auth.currentUser;
-    if (firebaseUser == null) return;
+    debugPrint(
+      'PERMISSION DIAG: refresh START '
+      'firebaseUid=${firebaseUser?.uid} '
+      'email=${firebaseUser?.email} '
+      'localUserId=${_currentUser?.id} '
+      'localUser=${_currentUser?.username}',
+    );
+    if (firebaseUser == null) {
+      debugPrint('PERMISSION DIAG: refresh STOP - Firebase user is null');
+      return;
+    }
 
     try {
       final doc = await _firestore

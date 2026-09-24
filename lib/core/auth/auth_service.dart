@@ -756,6 +756,11 @@ class AuthService {
   Future<void> updatePermissions(
       int userId, Map<String, bool> newPermissions) async {
     PermissionService.requirePermission(PermissionKeys.permissionsManage);
+
+    debugPrint(
+      'PERMISSION DIAG: updatePermissions START '
+      'userId=$userId permissions=${newPermissions.length}',
+    );
     final db = await _dbHelper.database;
     final count = await db.update(
       'users',
@@ -779,7 +784,21 @@ class AuthService {
 
     if (rows.isEmpty) return;
 
-    await _publishUserDirectory(User.fromMap(rows.first));
+    final diagnosticUser = User.fromMap(rows.first);
+    debugPrint(
+      'PERMISSION DIAG: target user '
+      'id=${diagnosticUser.id} '
+      'username=${diagnosticUser.username} '
+      'firebaseUid=${diagnosticUser.firebaseUid} '
+      'permissions=${diagnosticUser.permissions.length}',
+    );
+
+    await _publishUserDirectory(diagnosticUser);
+
+    debugPrint(
+      'PERMISSION DIAG: _publishUserDirectory completed '
+      'firebaseUid=${diagnosticUser.firebaseUid}',
+    );
   }
 
   /// يغيّر كلمة مرور المستخدم في SQLite + Firebase Auth.

@@ -247,7 +247,107 @@ class AuthService {
     );
 
     if (result.isNotEmpty) {
-      return User.fromMap(result.first);
+      final localUser = User.fromMap(result.first);
+
+      // Keep offline login working, but refresh permissions when Firebase is available.
+      try {
+        final email = localUser.firebaseEmail?.trim() ?? '';
+
+        if (email.isNotEmpty) {
+          final credential =
+              await _firebaseAuth.signInWithEmailAndPassword(
+            email: email,
+            password: password,
+          );
+
+          final firebaseUid = credential.user?.uid;
+
+          if (firebaseUid != null && firebaseUid.isNotEmpty) {
+            final userDoc = await _firestore
+                .collection('businesses')
+                .doc(_businessId)
+                .collection('user_directory')
+                .doc(firebaseUid)
+                .get();
+
+            if (userDoc.exists) {
+              final remote = userDoc.data();
+
+              if (remote != null && remote['is_deleted'] != true) {
+                final permissions = <String, bool>{};
+                final rawPermissions = remote['permissions'];
+
+                if (rawPermissions is Map) {
+                  rawPermissions.forEach((key, value) {
+                    permissions[key.toString()] = value == true;
+                  });
+                }
+
+                final remoteRole =
+                    remote['role']?.toString() ?? localUser.role;
+
+                final effectivePermissions = permissions.isEmpty
+                    ? _defaultPermissionsForRole(remoteRole)
+                    : permissions;
+
+                debugPrint(
+                  'AUTH DEBUG: refreshed local user '
+                  'username=$cleanUsername '
+                  'role=$remoteRole '
+                  'rawPermissions=$rawPermissions '
+                  'effectivePermissions=$effectivePermissions',
+                );
+
+                final refreshedUser = User(
+                  id: localUser.id,
+                  syncId: remote['sync_id']?.toString().isNotEmpty == true
+                      ? remote['sync_id'].toString()
+                      : localUser.syncId,
+                  firebaseUid: firebaseUid,
+                  firebaseEmail:
+                      remote['firebase_email']?.toString() ?? email,
+                  username:
+                      remote['username']?.toString() ?? localUser.username,
+                  passwordHash: localUser.passwordHash,
+                  recoveryCodeHash: localUser.recoveryCodeHash,
+                  fullName:
+                      remote['full_name']?.toString() ?? localUser.fullName,
+                  role: remoteRole,
+                  driverId: localUser.driverId,
+                  permissions: effectivePermissions,
+                  createdAt:
+                      remote['created_at']?.toString() ?? localUser.createdAt,
+                  updatedAt:
+                      remote['updated_at']?.toString() ?? localUser.updatedAt,
+                  mustChangePassword:
+                      remote['must_change_password'] == true,
+                );
+
+                final data = refreshedUser.toMap()..remove('id');
+
+                await db.update(
+                  'users',
+                  data,
+                  where: 'id = ?',
+                  whereArgs: [localUser.id],
+                );
+
+                return refreshedUser;
+              }
+            }
+          }
+        }
+      } on firebase_auth.FirebaseAuthException catch (e) {
+        debugPrint(
+          'AUTH DEBUG: local user Firebase refresh skipped: ${e.code}',
+        );
+      } catch (e) {
+        debugPrint(
+          'AUTH DEBUG: local user Firebase refresh skipped: $e',
+        );
+      }
+
+      return localUser;
     }
 
   // 2. New device: bootstrap login from the public login directory.

@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 import '../database/database_helper.dart';
 import 'connectivity_service.dart';
 import '../auth/permission_service.dart';
+import '../auth/user_provider.dart';
 import '../constants/permissions.dart';
 
 class SyncService {
@@ -852,6 +853,17 @@ class SyncService {
           );
           debugPrint('$stackTrace');
         }
+
+        if (table == 'users') {
+          final currentUser = PermissionService.currentUser;
+          if (currentUser != null && currentUser.syncId == syncId) {
+            debugPrint(
+              'USERS SYNC: current user updated; refreshing active session '
+              'sync_id=$syncId',
+            );
+            await UserProvider.refreshCurrentUserFromDatabase();
+          }
+        }
       } catch (e) {
         debugPrint('$table download error: $e');
       }
@@ -962,6 +974,100 @@ class SyncService {
     }
   }
 
+  Future<void> _refreshCurrentUserPermissions() async {
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) return;
+
+    try {
+      final doc = await _firestore
+          .collection('businesses')
+          .doc(businessId)
+          .collection('user_directory')
+          .doc(firebaseUser.uid)
+          .get();
+
+      if (!doc.exists || doc.data() == null) {
+        debugPrint(
+          'PERMISSION REFRESH: current user document not found',
+        );
+        return;
+      }
+
+      final remote = Map<String, dynamic>.from(doc.data()!);
+      final remotePermissions = remote['permissions'];
+
+      if (remotePermissions is! Map) {
+        debugPrint(
+          'PERMISSION REFRESH: permissions field is invalid',
+        );
+        return;
+      }
+
+      final db = await _dbHelper.database;
+      final currentUserId = _currentUser?.id;
+
+      if (currentUserId == null) {
+        debugPrint(
+          'PERMISSION REFRESH: local current user id is null',
+        );
+        return;
+      }
+
+      final permissions = <String, bool>{};
+      remotePermissions.forEach((key, value) {
+        if (value is bool) {
+          permissions[key.toString()] = value;
+        }
+      });
+
+      final updateData = <String, dynamic>{
+        'permissions': jsonEncode(permissions),
+      };
+
+      final remoteRole = remote['role']?.toString();
+      if (remoteRole != null && remoteRole.isNotEmpty) {
+        updateData['role'] = remoteRole;
+      }
+
+      final remoteUpdatedAt = remote['updated_at']?.toString();
+      if (remoteUpdatedAt != null && remoteUpdatedAt.isNotEmpty) {
+        updateData['updated_at'] = remoteUpdatedAt;
+      }
+
+      final remoteMustChangePassword =
+          remote['must_change_password'];
+      if (remoteMustChangePassword is bool) {
+        updateData['must_change_password'] =
+            remoteMustChangePassword ? 1 : 0;
+      }
+
+      final count = await db.update(
+        'users',
+        updateData,
+        where: 'id = ? AND is_deleted = 0',
+        whereArgs: [currentUserId],
+      );
+
+      if (count == 0) {
+        debugPrint(
+          'PERMISSION REFRESH: local user row not found '
+          'userId=$currentUserId',
+        );
+        return;
+      }
+
+      await UserProvider.refreshCurrentUserFromDatabase();
+
+      debugPrint(
+        'PERMISSION REFRESH: current user updated successfully '
+        'userId=$currentUserId permissions=${permissions.length}',
+      );
+    } catch (e, stackTrace) {
+      debugPrint('PERMISSION REFRESH failed: $e');
+      debugPrint('$stackTrace');
+    }
+  }
+
   Future<void> syncAll() async {
     if (_syncInProgress) {
       debugPrint('Sync skipped: another sync is already in progress');
@@ -980,6 +1086,7 @@ class SyncService {
     }
 
     _syncInProgress = true;
+      await _refreshCurrentUserPermissions();
 
     try {
       final db = await _dbHelper.database;
@@ -1007,18 +1114,56 @@ class SyncService {
       'operation_logs',
     ];
 
-      for (final table in order) {
-        if (_criticalSyncRequested) {
-          debugPrint(
-            'SYNC DEBUG: critical sync requested; stopping full upload early',
+        Future<void> uploadStage(List<String> tables) async {
+          if (_criticalSyncRequested) {
+            debugPrint(
+              'SYNC DEBUG: critical sync requested; stopping full upload early',
+            );
+            return;
+          }
+
+          await Future.wait(
+            tables.map((table) async {
+              debugPrint('SYNC DEBUG: UPLOAD START table=$table');
+              await _uploadTable(table);
+              debugPrint('SYNC DEBUG: UPLOAD DONE table=$table');
+            }),
           );
-          break;
         }
 
-        debugPrint('SYNC DEBUG: UPLOAD START table=$table');
-        await _uploadTable(table);
-        debugPrint('SYNC DEBUG: UPLOAD DONE table=$table');
-      }
+        await uploadStage([
+          'clients',
+          'suppliers',
+          'drivers',
+        ]);
+
+        await uploadStage([
+          'users',
+          'tanks',
+        ]);
+
+        await uploadStage([
+          'sales',
+          'purchase_invoices',
+          'filling_operations',
+          'expenses',
+          'salaries',
+          'operation_logs',
+        ]);
+
+        await uploadStage([
+          'purchase_items',
+          'payments',
+          'account_transactions',
+        ]);
+
+        await uploadStage([
+          'inventory_layers',
+        ]);
+
+        await uploadStage([
+          'sale_inventory_allocations',
+        ]);
 
       for (final table in order) {
         if (_criticalSyncRequested) {

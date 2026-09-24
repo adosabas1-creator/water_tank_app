@@ -6,6 +6,12 @@ import '../database/database_helper.dart';
 import 'permission_service.dart';
 
 class UserProvider extends ChangeNotifier {
+  static UserProvider? _instance;
+
+  UserProvider() {
+    _instance = this;
+  }
+
   static const String _sessionKey = 'current_user_id';
 
   User? _currentUser;
@@ -35,6 +41,38 @@ class UserProvider extends ChangeNotifier {
 
   /// يحاول استعادة الجلسة السابقة من SharedPreferences + SQLite.
   /// يُستدعى مرة واحدة عند بدء التطبيق.
+  static Future<void> refreshCurrentUserFromDatabase() async {
+    final provider = _instance;
+    if (provider == null) return;
+
+    final currentUserId = provider._currentUser?.id;
+    if (currentUserId == null) return;
+
+    try {
+      final db = await DatabaseHelper().database;
+      final rows = await db.query(
+        'users',
+        where: 'id = ? AND is_deleted = 0',
+        whereArgs: [currentUserId],
+        limit: 1,
+      );
+
+      if (rows.isEmpty) return;
+
+      final refreshedUser = User.fromMap(rows.first);
+      provider._currentUser = refreshedUser;
+      PermissionService.setCurrentUser(refreshedUser);
+      provider.notifyListeners();
+
+      debugPrint(
+        'UserProvider refreshed current user permissions from local DB: '
+        'userId=$currentUserId',
+      );
+    } catch (e) {
+      debugPrint('refreshCurrentUserFromDatabase failed: $e');
+    }
+  }
+
   Future<void> restoreSession() async {
     _isRestoring = true;
     notifyListeners();

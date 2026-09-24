@@ -1,0 +1,50 @@
+name: Build Permission Diagnostics APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Restore Android signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p android/app/keystore
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/keystore/water_tank_release.keystore
+          test -s android/app/keystore/water_tank_release.keystore
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Build permission diagnostics APK
+        env:
+          CM_KEYSTORE_PATH: keystore/water_tank_release.keystore
+          CM_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CM_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CM_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build apk --release --target-platform android-arm,android-arm64,android-x64
+
+      - name: Upload permission diagnostics APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: water-tank-app-permission-diagnostics-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error

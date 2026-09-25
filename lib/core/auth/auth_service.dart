@@ -100,8 +100,10 @@ class AuthService {
     }
   }
 
-  Future<void> _publishUserDirectory(User user,
-      {bool isDeleted = false}) async {
+  Future<void> _publishUserDirectory(
+    User user, {
+    bool isDeleted = false,
+  }) async {
     final data = <String, dynamic>{
       'sync_id': user.syncId,
       'firebase_uid': user.firebaseUid,
@@ -117,11 +119,15 @@ class AuthService {
     };
 
     final uid = user.firebaseUid;
+
     if (uid == null || uid.isEmpty) {
-      throw StateError('لا يمكن نشر المستخدم: Firebase UID غير موجود');
+      throw StateError(
+        'لا يمكن نشر المستخدم: Firebase UID غير موجود',
+      );
     }
 
     final db = await _dbHelper.database;
+
     String? driverSyncId;
 
     if (user.driverId != null) {
@@ -142,16 +148,105 @@ class AuthService {
 
     if (_firebaseAuth.currentUser == null) {
       throw StateError(
-        'المدير غير مسجل دخول في Firebase. أعد تسجيل الدخول بالإنترنت ثم حاول مرة أخرى.',
+        'المدير غير مسجل دخول في Firebase. '
+        'أعد تسجيل الدخول بالإنترنت ثم حاول مرة أخرى.',
       );
     }
 
-    await _firestore
+    final userDoc = _firestore
         .collection('businesses')
         .doc(_businessId)
         .collection('user_directory')
-        .doc(uid)
-        .set(data, SetOptions(merge: true));
+        .doc(uid);
+
+    // ===== الكتابة إلى Firestore =====
+    await userDoc.set(
+      data,
+      SetOptions(merge: true),
+    );
+
+    debugPrint(
+      'PERMISSION VERIFY: write completed '
+      'uid=$uid '
+      'username=${user.username} '
+      'permissions=${user.permissions}',
+    );
+
+    // ===== قراءة المستند مباشرة بعد الحفظ =====
+    final verifySnapshot = await userDoc.get();
+
+    if (!verifySnapshot.exists) {
+      throw StateError(
+        'فشل التحقق: مستند المستخدم غير موجود في Firestore بعد الحفظ. '
+        'uid=$uid',
+      );
+    }
+
+    final verifyData = verifySnapshot.data();
+
+    if (verifyData == null) {
+      throw StateError(
+        'فشل التحقق: مستند المستخدم موجود لكن بياناته فارغة. '
+        'uid=$uid',
+      );
+    }
+
+    final remotePermissionsRaw = verifyData['permissions'];
+
+    if (remotePermissionsRaw is! Map) {
+      throw StateError(
+        'فشل التحقق: حقل permissions في Firestore ليس Map. '
+        'uid=$uid '
+        'type=${remotePermissionsRaw.runtimeType}',
+      );
+    }
+
+    final remotePermissions = <String, bool>{};
+
+    remotePermissionsRaw.forEach((key, value) {
+      remotePermissions[key.toString()] = value == true;
+    });
+
+    // ===== مقارنة كل الصلاحيات =====
+    final expectedKeys = <String>{
+      ...user.permissions.keys,
+      ...remotePermissions.keys,
+    };
+
+    final mismatches = <String>[];
+
+    for (final key in expectedKeys) {
+      final expected = user.permissions[key] ?? false;
+      final actual = remotePermissions[key] ?? false;
+
+      if (expected != actual) {
+        mismatches.add(
+          '$key: expected=$expected actual=$actual',
+        );
+      }
+    }
+
+    if (mismatches.isNotEmpty) {
+      debugPrint(
+        'PERMISSION VERIFY FAILED: '
+        'uid=$uid '
+        'username=${user.username} '
+        'mismatches=$mismatches '
+        'remotePermissions=$remotePermissions',
+      );
+
+      throw StateError(
+        'فشل التحقق من صلاحيات المستخدم بعد الحفظ:\n'
+        '${mismatches.join('\n')}',
+      );
+    }
+
+    debugPrint(
+      'PERMISSION VERIFY SUCCESS: '
+      'uid=$uid '
+      'username=${user.username} '
+      'permissions=$remotePermissions',
+    );
   }
 
   Future<String?> signInToFirebase(String email, String password) async {

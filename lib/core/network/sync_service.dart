@@ -161,6 +161,23 @@ class SyncService {
       data.remove('recovery_code_hash');
       data.remove('driver_id');
 
+      final rawPermissions = data['permissions'];
+      if (rawPermissions is String) {
+        try {
+          final decoded = jsonDecode(rawPermissions);
+          if (decoded is Map) {
+            data['permissions'] = decoded.map(
+              (key, value) => MapEntry(key.toString(), value == true),
+            );
+          }
+        } catch (e) {
+          debugPrint(
+            'USERS UPLOAD: invalid permissions JSON '
+            'sync_id=${row['sync_id']} error=$e',
+          );
+        }
+      }
+
       if (row['driver_id'] != null) {
         data['driver_sync_id'] =
             await _localSyncId(db, 'drivers', row['driver_id']);

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:sqflite/sqflite.dart';
 
 import '../core/auth/permission_service.dart';
 import '../core/database/database_helper.dart';
 import '../models/payment.dart';
+import '../core/network/sync_service.dart';
 
 class PaymentService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -12,7 +14,7 @@ class PaymentService {
     _validatePayment(payment);
     final db = await _dbHelper.database;
 
-    return db.transaction((txn) async {
+    final id = await db.transaction((txn) async {
       await _validateReference(txn, payment);
 
       final key = payment.paymentKey.trim().isEmpty ? payment.syncId : payment.paymentKey.trim();
@@ -37,6 +39,8 @@ class PaymentService {
       }
       return id;
     });
+    unawaited(SyncService().syncAll());
+    return id;
   }
 
   Future<List<Payment>> getAllPayments() async {
@@ -126,6 +130,7 @@ class PaymentService {
         await _refreshPurchaseInvoiceStatus(txn, payment.purchaseInvoiceId!);
       }
     });
+    unawaited(SyncService().syncAll());
   }
 
   Future<void> deletePayment(int id) async {
@@ -139,6 +144,7 @@ class PaymentService {
       await txn.update('payments', {'is_deleted': 1, 'is_synced': 0, 'updated_at': DateTime.now().toIso8601String()}, where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
       if (invoiceId != null) await _refreshPurchaseInvoiceStatus(txn, invoiceId);
     });
+    unawaited(SyncService().syncAll());
   }
 
   void _validatePayment(Payment payment) {

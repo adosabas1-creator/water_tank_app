@@ -38,7 +38,11 @@ class DatabaseHelper {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
+        password_salt TEXT,
+        password_hash_version INTEGER DEFAULT 1,
         recovery_code_hash TEXT,
+        recovery_code_salt TEXT,
+        recovery_code_hash_version INTEGER DEFAULT 1,
         full_name TEXT NOT NULL,
         role TEXT NOT NULL,
         driver_id INTEGER,
@@ -1700,6 +1704,39 @@ class DatabaseHelper {
           WHERE user_sync_id IS NOT NULL
              OR record_sync_id IS NOT NULL
         ''');
+    }
+
+    // الإصدار 37: تجهيز تخزين آمن لكلمات المرور وأكواد الاسترداد.
+    // لا نغيّر طريقة التحقق القديمة هنا؛ المستخدمون الحاليون
+    // سيبقون متوافقين مع SHA-256 حتى تتم ترقيتهم بعد تسجيل دخول ناجح.
+    if (oldVersion < 37) {
+      await _addColumnIfMissing(
+        db,
+        'users',
+        'password_salt',
+        'TEXT',
+      );
+
+      await _addColumnIfMissing(
+        db,
+        'users',
+        'password_hash_version',
+        'INTEGER DEFAULT 1',
+      );
+
+      await _addColumnIfMissing(
+        db,
+        'users',
+        'recovery_code_salt',
+        'TEXT',
+      );
+
+      await _addColumnIfMissing(
+        db,
+        'users',
+        'recovery_code_hash_version',
+        'INTEGER DEFAULT 1',
+      );
     }
   }
 }

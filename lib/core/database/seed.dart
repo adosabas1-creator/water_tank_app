@@ -1,9 +1,4 @@
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart';
-
 import 'database_helper.dart';
 
 Future<void> seedAdminUser() async {
@@ -11,48 +6,22 @@ Future<void> seedAdminUser() async {
 
   final existingAdmin = await db.query(
     'users',
-    where: 'username = ?',
+    where: 'username = ? AND is_deleted = 0',
     whereArgs: ['admin'],
     limit: 1,
   );
 
   if (existingAdmin.isEmpty) {
-    final now = DateTime.now().toIso8601String();
-    final passwordHash = sha256.convert(utf8.encode('admin123')).toString();
-
-    await db.insert('users', {
-      'sync_id': const Uuid().v4(),
-      'username': 'admin',
-      'password_hash': passwordHash,
-      'firebase_uid': 'hkToxDvTG0Y9uQ4ltAJok2Fr8j72',
-      'firebase_email': 'adosabas1@gmail.com',
-      'full_name': 'مدير النظام',
-      'role': 'admin',
-      'permissions':
-          '{"clients_view":true,"clients_add":true,"clients_edit":true,"clients_delete":true,"sales_view":true,"sales_add":true,"sales_edit":true,"sales_delete":true,"suppliers_view":true,"suppliers_add":true,"suppliers_edit":true,"suppliers_delete":true,"client_statements_view":true,"supplier_statements_view":true,"profits_view":true,"prices_edit":true,"users_manage":true,"permissions_manage":true}',
-      'created_at': now,
-      'updated_at': now,
-      'is_deleted': 0,
-      'is_synced': 0,
-      'must_change_password': 0,
-    });
-
-    debugPrint('Admin user created successfully');
-  } else {
-    await db.update(
-      'users',
-      {
-        'firebase_uid': 'hkToxDvTG0Y9uQ4ltAJok2Fr8j72',
-        'firebase_email': 'adosabas1@gmail.com',
-        'updated_at': DateTime.now().toIso8601String(),
-        'is_synced': 0,
-      },
-      where: 'username = ?',
-      whereArgs: ['admin'],
+    // لا ننشئ مديرًا بكلمة مرور ثابتة داخل التطبيق.
+    // على الجهاز الجديد يتم إنشاء الحساب المحلي بعد نجاح
+    // تسجيل الدخول عبر Firebase، وتُخزّن كلمة المرور باستخدام PBKDF2.
+    debugPrint(
+      'Default admin seed skipped: no hardcoded password is created.',
     );
-
-    debugPrint('Admin Firebase link updated successfully');
+    return;
   }
 
-
+  // المستخدم الموجود محليًا يحتفظ ببيانات اعتماده المحلية،
+  // بما فيها PBKDF2 + Salt. لا نعيد تعيين كلمة المرور هنا.
+  debugPrint('Existing admin preserved; no credentials were changed.');
 }

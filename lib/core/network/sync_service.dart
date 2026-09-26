@@ -157,8 +157,13 @@ class SyncService {
     data.remove('is_synced');
 
     if (table == 'users') {
+      // لا نرسل أي بيانات اعتماد أو أسرار مشتقة إلى Firestore.
       data.remove('password_hash');
+      data.remove('password_salt');
+      data.remove('password_hash_version');
       data.remove('recovery_code_hash');
+      data.remove('recovery_code_salt');
+      data.remove('recovery_code_hash_version');
       data.remove('driver_id');
 
       final rawPermissions = data['permissions'];
@@ -450,11 +455,22 @@ class SyncService {
       );
 
       if (existing.isNotEmpty) {
+        // بيانات الاعتماد محلية فقط ولا تُستبدل ببيانات Firestore.
         data['password_hash'] = existing.first['password_hash'];
+        data['password_salt'] = existing.first['password_salt'];
+        data['password_hash_version'] =
+            existing.first['password_hash_version'];
         data['recovery_code_hash'] = existing.first['recovery_code_hash'];
+        data['recovery_code_salt'] = existing.first['recovery_code_salt'];
+        data['recovery_code_hash_version'] =
+            existing.first['recovery_code_hash_version'];
       } else {
         data['password_hash'] = 'remote_profile_${remote['sync_id']}';
+        data['password_salt'] = null;
+        data['password_hash_version'] = 1;
         data['recovery_code_hash'] = null;
+        data['recovery_code_salt'] = null;
+        data['recovery_code_hash_version'] = 1;
       }
 
       final permissions = data['permissions'];
@@ -529,7 +545,11 @@ class SyncService {
               'username': 'remote_creator_$creatorSyncId',
               'password_hash':
                   'remote_${DateTime.now().microsecondsSinceEpoch}',
+              'password_salt': null,
+              'password_hash_version': 1,
               'recovery_code_hash': null,
+              'recovery_code_salt': null,
+              'recovery_code_hash_version': 1,
               'full_name': data['created_by_name']?.toString() ?? 'مستخدم سابق',
               'role': 'member',
               'driver_id': null,

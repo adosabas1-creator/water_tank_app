@@ -7,7 +7,11 @@ class User {
   final String? firebaseEmail;
   final String username;
   final String passwordHash;
+  final String? passwordSalt;
+  final int passwordHashVersion;
   final String? recoveryCodeHash;
+  final String? recoveryCodeSalt;
+  final int recoveryCodeHashVersion;
   final String fullName;
   final String role;
   final int? driverId;
@@ -23,7 +27,11 @@ class User {
     this.firebaseEmail,
     required this.username,
     required this.passwordHash,
+    this.passwordSalt,
+    this.passwordHashVersion = 1,
     this.recoveryCodeHash,
+    this.recoveryCodeSalt,
+    this.recoveryCodeHashVersion = 1,
     required this.fullName,
     required this.role,
     this.driverId,
@@ -50,7 +58,11 @@ class User {
       'firebase_email': firebaseEmail,
       'username': username,
       'password_hash': passwordHash,
+      'password_salt': passwordSalt,
+      'password_hash_version': passwordHashVersion,
       'recovery_code_hash': recoveryCodeHash,
+      'recovery_code_salt': recoveryCodeSalt,
+      'recovery_code_hash_version': recoveryCodeHashVersion,
       'full_name': fullName,
       'role': role,
       'driver_id': driverId,
@@ -71,7 +83,13 @@ class User {
       firebaseEmail: map['firebase_email'],
       username: map['username'],
       passwordHash: map['password_hash'],
+      passwordSalt: map['password_salt'],
+      passwordHashVersion:
+          (map['password_hash_version'] as num?)?.toInt() ?? 1,
       recoveryCodeHash: map['recovery_code_hash'],
+      recoveryCodeSalt: map['recovery_code_salt'],
+      recoveryCodeHashVersion:
+          (map['recovery_code_hash_version'] as num?)?.toInt() ?? 1,
       fullName: map['full_name'],
       role: map['role'],
       driverId: map['driver_id'],

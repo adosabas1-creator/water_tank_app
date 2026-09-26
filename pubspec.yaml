@@ -26,6 +26,8 @@ dependencies:
   pdf: ^3.13.0
   share_plus: ^13.3.0
   printing: ^5.15.1
+  cryptography: ^2.9.0
+  cryptography_flutter: ^2.3.4
 
 dev_dependencies:
   flutter_test:

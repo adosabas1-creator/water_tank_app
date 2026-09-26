@@ -61,3 +61,19 @@ firestore.rules.before-*
 # === IDE & temp ===
 .vscode/
 .idea/
+
+# === Local temporary/debug files ===
+alborai_water_db.db
+done
+echo
+grep
+*.tmp
+session-ses_*.md
+syncAll-before-*.txt
+
+# === Project backup snapshots ===
+*.backup
+*.backup-*
+
+# === Timestamped backup snapshots ===
+*.backup_*

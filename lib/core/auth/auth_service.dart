@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart' as crypto2;
+import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -329,24 +331,104 @@ class AuthService {
     if (cleanUsername.isEmpty || password.isEmpty) return null;
 
     final db = await _dbHelper.database;
-    final passwordHash = _hashPassword(password);
 
     // 1. Local login: works completely offline.
-    // إذا كان المستخدم موجودًا محليًا وكلمة المرور صحيحة،
-    // لا ننتظر Firebase أو Firestore حتى يتم الدخول.
-    final result = await db.query(
+    // ندعم الإصدار القديم SHA-256 والإصدار الجديد PBKDF2.
+    final localRows = await db.query(
       'users',
-      where: 'username = ? AND password_hash = ? AND is_deleted = 0',
-      whereArgs: [cleanUsername, passwordHash],
+      where: 'username = ? AND is_deleted = 0',
+      whereArgs: [cleanUsername],
       limit: 1,
     );
 
-    if (result.isNotEmpty) {
-      final localUser = User.fromMap(result.first);
+    if (localRows.isNotEmpty) {
+      final localUser = User.fromMap(localRows.first);
+
+      var passwordValid = false;
+      var upgradedPasswordHash = localUser.passwordHash;
+      var upgradedPasswordSalt = localUser.passwordSalt;
+      var upgradedPasswordHashVersion = localUser.passwordHashVersion;
+
+      if (localUser.passwordHashVersion >= _passwordHashVersion &&
+          localUser.passwordSalt != null &&
+          localUser.passwordSalt!.trim().isNotEmpty) {
+        try {
+          final salt = _hexToBytes(localUser.passwordSalt!);
+          final calculatedHash = await _hashPasswordV2(password, salt);
+
+          passwordValid = _constantTimeEquals(
+            calculatedHash,
+            localUser.passwordHash,
+          );
+        } catch (_) {
+          passwordValid = false;
+        }
+      } else {
+        // المستخدم القديم: SHA-256.
+        final legacyHash = _hashPassword(password);
+        passwordValid = _constantTimeEquals(
+          legacyHash,
+          localUser.passwordHash,
+        );
+
+        // بعد نجاح التحقق القديم، نرقّي كلمة المرور إلى PBKDF2.
+        if (passwordValid) {
+          final newSalt = await _newPasswordSalt();
+          upgradedPasswordHash = await _hashPasswordV2(
+            password,
+            newSalt,
+          );
+          upgradedPasswordSalt = _bytesToHex(newSalt);
+          upgradedPasswordHashVersion = _passwordHashVersion;
+
+          await db.update(
+            'users',
+            {
+              'password_hash': upgradedPasswordHash,
+              'password_salt': upgradedPasswordSalt,
+              'password_hash_version': upgradedPasswordHashVersion,
+              'updated_at': DateTime.now().toIso8601String(),
+              'is_synced': 0,
+            },
+            where: 'id = ? AND is_deleted = 0',
+            whereArgs: [localUser.id],
+          );
+        }
+      }
+
+      if (!passwordValid) return null;
+
+      var authenticatedLocalUser = localUser;
+
+      // إذا تمت ترقية كلمة المرور، حدّث الكائن المحلي أيضًا.
+      if (upgradedPasswordHash != localUser.passwordHash ||
+          upgradedPasswordSalt != localUser.passwordSalt ||
+          upgradedPasswordHashVersion != localUser.passwordHashVersion) {
+        authenticatedLocalUser = User(
+          id: localUser.id,
+          syncId: localUser.syncId,
+          firebaseUid: localUser.firebaseUid,
+          firebaseEmail: localUser.firebaseEmail,
+          username: localUser.username,
+          passwordHash: upgradedPasswordHash,
+          passwordSalt: upgradedPasswordSalt,
+          passwordHashVersion: upgradedPasswordHashVersion,
+          recoveryCodeHash: localUser.recoveryCodeHash,
+          recoveryCodeSalt: localUser.recoveryCodeSalt,
+          recoveryCodeHashVersion: localUser.recoveryCodeHashVersion,
+          fullName: localUser.fullName,
+          role: localUser.role,
+          driverId: localUser.driverId,
+          permissions: localUser.permissions,
+          createdAt: localUser.createdAt,
+          updatedAt: localUser.updatedAt,
+          mustChangePassword: localUser.mustChangePassword,
+        );
+      }
 
       // Keep offline login working, but refresh permissions when Firebase is available.
       try {
-        final email = localUser.firebaseEmail?.trim() ?? '';
+        final email = authenticatedLocalUser.firebaseEmail?.trim() ?? '';
 
         if (email.isNotEmpty) {
           final credential =
@@ -379,7 +461,7 @@ class AuthService {
                 }
 
                 final remoteRole =
-                    remote['role']?.toString() ?? localUser.role;
+                    remote['role']?.toString() ?? authenticatedLocalUser.role;
 
                 final effectivePermissions = permissions.isEmpty
                     ? _defaultPermissionsForRole(remoteRole)
@@ -394,26 +476,38 @@ class AuthService {
                 );
 
                 final refreshedUser = User(
-                  id: localUser.id,
+                  id: authenticatedLocalUser.id,
                   syncId: remote['sync_id']?.toString().isNotEmpty == true
                       ? remote['sync_id'].toString()
-                      : localUser.syncId,
+                      : authenticatedLocalUser.syncId,
                   firebaseUid: firebaseUid,
                   firebaseEmail:
-                      remote['firebase_email']?.toString() ?? email,
+                      remote['firebase_email']?.toString() ??
+                      email,
                   username:
-                      remote['username']?.toString() ?? localUser.username,
-                  passwordHash: localUser.passwordHash,
-                  recoveryCodeHash: localUser.recoveryCodeHash,
+                      remote['username']?.toString() ??
+                      authenticatedLocalUser.username,
+                  passwordHash: upgradedPasswordHash,
+                  passwordSalt: upgradedPasswordSalt,
+                  passwordHashVersion: upgradedPasswordHashVersion,
+                  recoveryCodeHash:
+                      authenticatedLocalUser.recoveryCodeHash,
+                  recoveryCodeSalt:
+                      authenticatedLocalUser.recoveryCodeSalt,
+                  recoveryCodeHashVersion:
+                      authenticatedLocalUser.recoveryCodeHashVersion,
                   fullName:
-                      remote['full_name']?.toString() ?? localUser.fullName,
+                      remote['full_name']?.toString() ??
+                      authenticatedLocalUser.fullName,
                   role: remoteRole,
-                  driverId: localUser.driverId,
+                  driverId: authenticatedLocalUser.driverId,
                   permissions: effectivePermissions,
                   createdAt:
-                      remote['created_at']?.toString() ?? localUser.createdAt,
+                      remote['created_at']?.toString() ??
+                      authenticatedLocalUser.createdAt,
                   updatedAt:
-                      remote['updated_at']?.toString() ?? localUser.updatedAt,
+                      remote['updated_at']?.toString() ??
+                      authenticatedLocalUser.updatedAt,
                   mustChangePassword:
                       remote['must_change_password'] == true,
                 );
@@ -424,7 +518,7 @@ class AuthService {
                   'users',
                   data,
                   where: 'id = ?',
-                  whereArgs: [localUser.id],
+                  whereArgs: [authenticatedLocalUser.id],
                 );
 
                 return refreshedUser;
@@ -442,15 +536,14 @@ class AuthService {
         );
       }
 
-      return localUser;
+      return authenticatedLocalUser;
     }
 
-  // 2. New device: bootstrap login from the public login directory.
+    // 2. New device: bootstrap login from the public login directory.
     // The device does not have a local account yet, so it cannot read
     // the protected user_directory until Firebase authentication succeeds.
     try {
-      // ✅ قراءة بمستند واحد (get) بدل الاستعلام (list)
-      // السبب: القواعد الأمنية تسمح بـ get فقط لمنع سرد كل المستخدمين.
+      // قراءة بمستند واحد (get) بدل الاستعلام (list).
       final directoryDoc = await _firestore
           .collection('businesses')
           .doc(_businessId)
@@ -462,15 +555,17 @@ class AuthService {
 
       final directory = directoryDoc.data();
       if (directory == null) return null;
-
       if (directory['is_deleted'] == true) return null;
 
-      final email = directory['firebase_email']?.toString().trim() ?? '';
+      final email =
+          directory['firebase_email']?.toString().trim() ?? '';
+
       if (email.isEmpty) return null;
 
       // Authenticate first. After this succeeds, protected Firestore
       // collections such as user_directory become readable.
-      final credential = await _firebaseAuth.signInWithEmailAndPassword(
+      final credential =
+          await _firebaseAuth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
@@ -501,8 +596,7 @@ class AuthService {
       }
 
       final remoteRole = remote['role']?.toString() ?? 'member';
-      // ✅ حماية: إذا كانت الصلاحيات فارغة في Firestore،
-      // استخدم الصلاحيات الافتراضية حسب الدور.
+
       final effectivePermissions = permissions.isEmpty
           ? _defaultPermissionsForRole(remoteRole)
           : permissions;
@@ -515,6 +609,13 @@ class AuthService {
         'effectivePermissions=$effectivePermissions',
       );
 
+      // حساب جديد على هذا الجهاز: نخزن كلمة المرور محليًا بـ PBKDF2.
+      final passwordSalt = await _newPasswordSalt();
+      final passwordHash = await _hashPasswordV2(
+        password,
+        passwordSalt,
+      );
+
       final now = DateTime.now().toIso8601String();
 
       final user = User(
@@ -523,10 +624,16 @@ class AuthService {
             : const Uuid().v4(),
         firebaseUid: firebaseUid,
         firebaseEmail: email,
-        username: remote['username']?.toString() ?? cleanUsername,
+        username:
+            remote['username']?.toString() ?? cleanUsername,
         passwordHash: passwordHash,
+        passwordSalt: _bytesToHex(passwordSalt),
+        passwordHashVersion: _passwordHashVersion,
         recoveryCodeHash: null,
-        fullName: remote['full_name']?.toString() ?? cleanUsername,
+        recoveryCodeSalt: null,
+        recoveryCodeHashVersion: 1,
+        fullName:
+            remote['full_name']?.toString() ?? cleanUsername,
         role: remoteRole,
 
         // Convert the stable Firebase driver sync_id to this device's local driver ID.
@@ -538,7 +645,8 @@ class AuthService {
         permissions: effectivePermissions,
         createdAt: remote['created_at']?.toString() ?? now,
         updatedAt: remote['updated_at']?.toString() ?? now,
-        mustChangePassword: remote['must_change_password'] == true,
+        mustChangePassword:
+            remote['must_change_password'] == true,
       );
 
       final localId = await db.insert(
@@ -547,9 +655,8 @@ class AuthService {
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 
-      // ملاحظة: لا نُشغّل syncAll هنا لأن PermissionService.currentUser
+      // لا نُشغّل syncAll هنا لأن PermissionService.currentUser
       // لم يُضبط بعد. login_screen سيستدعي setUser ثم syncAll بالترتيب الصحيح.
-
       return User.fromMap({
         ...user.toMap(),
         'id': localId,
@@ -629,13 +736,19 @@ class AuthService {
 
     final firebaseUid = await createFirebaseUser(cleanEmail, password);
 
+    // المستخدم الجديد يُخزّن محليًا باستخدام PBKDF2 مع Salt مستقل.
+    final passwordSalt = await _newPasswordSalt();
+    final passwordHash = await _hashPasswordV2(password, passwordSalt);
+
     final now = DateTime.now().toIso8601String();
     final user = User(
       syncId: const Uuid().v4(),
       firebaseUid: firebaseUid,
       firebaseEmail: cleanEmail,
       username: cleanUsername,
-      passwordHash: _hashPassword(password),
+      passwordHash: passwordHash,
+      passwordSalt: _bytesToHex(passwordSalt),
+      passwordHashVersion: _passwordHashVersion,
       fullName: cleanFullName,
       role: role,
       driverId: driverId,
@@ -980,10 +1093,15 @@ class AuthService {
       );
     }
 
+    final passwordSalt = await _newPasswordSalt();
+    final passwordHash = await _hashPasswordV2(newPassword, passwordSalt);
+
     final count = await db.update(
       'users',
       {
-        'password_hash': _hashPassword(newPassword),
+        'password_hash': passwordHash,
+        'password_salt': _bytesToHex(passwordSalt),
+        'password_hash_version': _passwordHashVersion,
         'must_change_password': 0,
         'updated_at': DateTime.now().toIso8601String(),
         'is_synced': 0,
@@ -1056,10 +1174,14 @@ class AuthService {
           'رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
     }
     final db = await _dbHelper.database;
+    final recoveryCodeSalt = await _newPasswordSalt();
+    final recoveryCodeHash = await _hashPasswordV2(code, recoveryCodeSalt);
     final count = await db.update(
       'users',
       {
-        'recovery_code_hash': _hashPassword(code),
+        'recovery_code_hash': recoveryCodeHash,
+        'recovery_code_salt': _bytesToHex(recoveryCodeSalt),
+        'recovery_code_hash_version': _passwordHashVersion,
         'updated_at': DateTime.now().toIso8601String(),
         'is_synced': 0,
       },
@@ -1074,14 +1196,71 @@ class AuthService {
     required String recoveryCode,
   }) async {
     final db = await _dbHelper.database;
-    final result = await db.query(
+    final cleanUsername = username.trim();
+    final cleanRecoveryCode = recoveryCode.trim();
+
+    final rows = await db.query(
       'users',
-      columns: ['id'],
-      where: 'username = ? AND recovery_code_hash = ? AND is_deleted = 0',
-      whereArgs: [username.trim(), _hashPassword(recoveryCode.trim())],
+      columns: [
+        'id',
+        'recovery_code_hash',
+        'recovery_code_salt',
+        'recovery_code_hash_version',
+      ],
+      where: 'username = ? AND is_deleted = 0',
+      whereArgs: [cleanUsername],
       limit: 1,
     );
-    return result.isNotEmpty;
+
+    if (rows.isEmpty) return false;
+
+    final user = rows.first;
+    final storedHash = user['recovery_code_hash']?.toString() ?? '';
+    if (storedHash.isEmpty) return false;
+
+    final hashVersion =
+        (user['recovery_code_hash_version'] as num?)?.toInt() ?? 1;
+    final saltText = user['recovery_code_salt']?.toString().trim() ?? '';
+
+    if (hashVersion >= 2 && saltText.isNotEmpty) {
+      try {
+        final salt = _hexToBytes(saltText);
+        final calculatedHash = await _hashPasswordV2(
+          cleanRecoveryCode,
+          salt,
+        );
+        return _constantTimeEquals(calculatedHash, storedHash);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    // دعم أكواد الاسترداد القديمة SHA-256 وترقيتها بعد نجاح التحقق.
+    final legacyHash = _hashPassword(cleanRecoveryCode);
+    if (!_constantTimeEquals(legacyHash, storedHash)) {
+      return false;
+    }
+
+    final newSalt = await _newPasswordSalt();
+    final newHash = await _hashPasswordV2(
+      cleanRecoveryCode,
+      newSalt,
+    );
+
+    await db.update(
+      'users',
+      {
+        'recovery_code_hash': newHash,
+        'recovery_code_salt': _bytesToHex(newSalt),
+        'recovery_code_hash_version': _passwordHashVersion,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [user['id']],
+    );
+
+    return true;
   }
 
   Future<bool> sendPasswordResetByRecoveryCode({
@@ -1089,20 +1268,79 @@ class AuthService {
     required String recoveryCode,
   }) async {
     final db = await _dbHelper.database;
+    final cleanUsername = username.trim();
+    final cleanRecoveryCode = recoveryCode.trim();
+
     final result = await db.query(
       'users',
-      columns: ['id', 'firebase_email'],
-      where: 'username = ? AND recovery_code_hash = ? AND is_deleted = 0',
-      whereArgs: [username.trim(), _hashPassword(recoveryCode.trim())],
+      columns: [
+        'id',
+        'firebase_email',
+        'recovery_code_hash',
+        'recovery_code_salt',
+        'recovery_code_hash_version',
+      ],
+      where: 'username = ? AND is_deleted = 0',
+      whereArgs: [cleanUsername],
       limit: 1,
     );
 
     if (result.isEmpty) return false;
 
-    final email = result.first['firebase_email']?.toString().trim() ?? '';
+    final user = result.first;
+    final storedHash = user['recovery_code_hash']?.toString() ?? '';
+    if (storedHash.isEmpty) return false;
+
+    final hashVersion =
+        (user['recovery_code_hash_version'] as num?)?.toInt() ?? 1;
+    final saltText = user['recovery_code_salt']?.toString().trim() ?? '';
+
+    bool verified = false;
+
+    if (hashVersion >= 2 && saltText.isNotEmpty) {
+      try {
+        final salt = _hexToBytes(saltText);
+        final calculatedHash = await _hashPasswordV2(
+          cleanRecoveryCode,
+          salt,
+        );
+        verified = _constantTimeEquals(calculatedHash, storedHash);
+      } catch (_) {
+        return false;
+      }
+    } else {
+      final legacyHash = _hashPassword(cleanRecoveryCode);
+      verified = _constantTimeEquals(legacyHash, storedHash);
+    }
+
+    if (!verified) return false;
+
+    final email = user['firebase_email']?.toString().trim() ?? '';
     if (email.isEmpty || !email.contains('@')) {
       throw StateError(
         'لا يوجد بريد إلكتروني مرتبط بهذا الحساب لاستعادة كلمة المرور',
+      );
+    }
+
+    // ترقية رمز الاسترداد القديم إلى PBKDF2 قبل إرسال رابط الاستعادة.
+    if (hashVersion < 2 || saltText.isEmpty) {
+      final newSalt = await _newPasswordSalt();
+      final newHash = await _hashPasswordV2(
+        cleanRecoveryCode,
+        newSalt,
+      );
+
+      await db.update(
+        'users',
+        {
+          'recovery_code_hash': newHash,
+          'recovery_code_salt': _bytesToHex(newSalt),
+          'recovery_code_hash_version': _passwordHashVersion,
+          'updated_at': DateTime.now().toIso8601String(),
+          'is_synced': 0,
+        },
+        where: 'id = ? AND is_deleted = 0',
+        whereArgs: [user['id']],
       );
     }
 
@@ -1112,6 +1350,79 @@ class AuthService {
 
   String _hashPassword(String password) {
     return sha256.convert(utf8.encode(password)).toString();
+  }
+
+  // الإصدار 2: PBKDF2-HMAC-SHA256 مع Salt عشوائي مستقل لكل مستخدم.
+  static const int _passwordHashVersion = 2;
+  static const int _passwordSaltLength = 16;
+  static const int _pbkdf2Iterations = 100000;
+  static const int _pbkdf2Bits = 256;
+
+  final crypto2.Pbkdf2 _passwordKdf = crypto2.Pbkdf2(
+    macAlgorithm: crypto2.Hmac.sha256(),
+    iterations: _pbkdf2Iterations,
+    bits: _pbkdf2Bits,
+  );
+
+  List<int> _generatePasswordSalt() {
+    final random = Random.secure();
+    return List<int>.generate(
+      _passwordSaltLength,
+      (_) => random.nextInt(256),
+    );
+  }
+
+  Future<String> _hashPasswordV2(
+    String password,
+    List<int> salt,
+  ) async {
+    final secretKey = await _passwordKdf.deriveKeyFromPassword(
+      password: password,
+      nonce: salt,
+    );
+
+    final bytes = await secretKey.extractBytes();
+    return bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  List<int> _hexToBytes(String hex) {
+    final clean = hex.trim();
+
+    if (clean.isEmpty || clean.length.isOdd) {
+      throw FormatException('Invalid hexadecimal salt');
+    }
+
+    final bytes = <int>[];
+
+    for (var i = 0; i < clean.length; i += 2) {
+      bytes.add(int.parse(clean.substring(i, i + 2), radix: 16));
+    }
+
+    return bytes;
+  }
+
+  String _bytesToHex(List<int> bytes) {
+    return bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+
+    var difference = 0;
+
+    for (var i = 0; i < a.length; i++) {
+      difference |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+
+    return difference == 0;
+  }
+
+  Future<List<int>> _newPasswordSalt() async {
+    return _generatePasswordSalt();
   }
 
   Map<String, bool> _defaultPermissionsForRole(String role) {

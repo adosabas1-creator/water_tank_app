@@ -915,6 +915,86 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> _upgradeCoreTablesSyncIdsToV27(Database db) async {
+        final columns = await db.rawQuery('PRAGMA table_info(clients)');
+        final hasSyncId = columns.any(
+          (column) => column['name'] == 'sync_id',
+        );
+
+        if (!hasSyncId) {
+          await _safeExec(db, 'ALTER TABLE clients ADD COLUMN sync_id TEXT');
+
+          final rows = await db.query(
+            'clients',
+            columns: ['id'],
+            where: 'sync_id IS NULL',
+          );
+
+          const uuid = Uuid();
+          for (final row in rows) {
+            await db.update(
+              'clients',
+              {'sync_id': uuid.v4()},
+              where: 'id = ?',
+              whereArgs: [row['id']],
+            );
+          }
+        }
+
+        final driverColumns = await db.rawQuery(
+          'PRAGMA table_info(drivers)',
+        );
+        final hasDriverSyncId = driverColumns.any(
+          (column) => column['name'] == 'sync_id',
+        );
+
+        if (!hasDriverSyncId) {
+          await _safeExec(db, 'ALTER TABLE drivers ADD COLUMN sync_id TEXT');
+
+          final driverRows = await db.query(
+            'drivers',
+            columns: ['id'],
+            where: 'sync_id IS NULL',
+          );
+
+          const uuid = Uuid();
+          for (final row in driverRows) {
+            await db.update(
+              'drivers',
+              {'sync_id': uuid.v4()},
+              where: 'id = ?',
+              whereArgs: [row['id']],
+            );
+          }
+        }
+
+        final supplierColumns = await db.rawQuery(
+          'PRAGMA table_info(suppliers)',
+        );
+        final hasSupplierSyncId = supplierColumns.any(
+          (column) => column['name'] == 'sync_id',
+        );
+
+        if (!hasSupplierSyncId) {
+          await _safeExec(db, 'ALTER TABLE suppliers ADD COLUMN sync_id TEXT');
+
+          final supplierRows = await db.query(
+            'suppliers',
+            columns: ['id'],
+            where: 'sync_id IS NULL',
+          );
+
+          const uuid = Uuid();
+          for (final row in supplierRows) {
+            await db.update(
+              'suppliers',
+              {'sync_id': uuid.v4()},
+              where: 'id = ?',
+              whereArgs: [row['id']],
+            );
+          }
+        }
+  }
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -1325,86 +1405,8 @@ class DatabaseHelper {
     }
 
     if (oldVersion < 27) {
-      final columns = await db.rawQuery('PRAGMA table_info(clients)');
-      final hasSyncId = columns.any(
-        (column) => column['name'] == 'sync_id',
-      );
-
-      if (!hasSyncId) {
-        await _safeExec(db, 'ALTER TABLE clients ADD COLUMN sync_id TEXT');
-
-        final rows = await db.query(
-          'clients',
-          columns: ['id'],
-          where: 'sync_id IS NULL',
-        );
-
-        const uuid = Uuid();
-        for (final row in rows) {
-          await db.update(
-            'clients',
-            {'sync_id': uuid.v4()},
-            where: 'id = ?',
-            whereArgs: [row['id']],
-          );
-        }
-      }
-
-      final driverColumns = await db.rawQuery(
-        'PRAGMA table_info(drivers)',
-      );
-      final hasDriverSyncId = driverColumns.any(
-        (column) => column['name'] == 'sync_id',
-      );
-
-      if (!hasDriverSyncId) {
-        await _safeExec(db, 'ALTER TABLE drivers ADD COLUMN sync_id TEXT');
-
-        final driverRows = await db.query(
-          'drivers',
-          columns: ['id'],
-          where: 'sync_id IS NULL',
-        );
-
-        const uuid = Uuid();
-        for (final row in driverRows) {
-          await db.update(
-            'drivers',
-            {'sync_id': uuid.v4()},
-            where: 'id = ?',
-            whereArgs: [row['id']],
-          );
-        }
-      }
-
-      final supplierColumns = await db.rawQuery(
-        'PRAGMA table_info(suppliers)',
-      );
-      final hasSupplierSyncId = supplierColumns.any(
-        (column) => column['name'] == 'sync_id',
-      );
-
-      if (!hasSupplierSyncId) {
-        await _safeExec(db, 'ALTER TABLE suppliers ADD COLUMN sync_id TEXT');
-
-        final supplierRows = await db.query(
-          'suppliers',
-          columns: ['id'],
-          where: 'sync_id IS NULL',
-        );
-
-        const uuid = Uuid();
-        for (final row in supplierRows) {
-          await db.update(
-            'suppliers',
-            {'sync_id': uuid.v4()},
-            where: 'id = ?',
-            whereArgs: [row['id']],
-          );
-        }
-      }
+      await _upgradeCoreTablesSyncIdsToV27(db);
     }
-
     if (oldVersion < 27) {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS account_transactions (

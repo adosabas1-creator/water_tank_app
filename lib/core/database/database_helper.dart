@@ -1268,6 +1268,40 @@ class DatabaseHelper {
           ''');
   }
 
+  Future<void> _upgradeSaleInventoryAllocationsToV27(Database db) async {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS sale_inventory_allocations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sale_id INTEGER NOT NULL,
+              inventory_layer_id INTEGER NOT NULL,
+              purchase_item_id INTEGER NOT NULL,
+              supplier_id INTEGER NOT NULL,
+              units INTEGER NOT NULL,
+              unit_cost REAL NOT NULL,
+              cost_amount REAL NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              is_deleted INTEGER DEFAULT 0,
+              is_synced INTEGER DEFAULT 0,
+              sync_id TEXT UNIQUE NOT NULL,
+              FOREIGN KEY (sale_id) REFERENCES sales (id),
+              FOREIGN KEY (inventory_layer_id) REFERENCES inventory_layers (id),
+              FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id),
+              FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+            )
+          ''');
+
+          await db.execute('''
+            CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_sale
+            ON sale_inventory_allocations (sale_id)
+          ''');
+
+          await db.execute('''
+            CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_supplier
+            ON sale_inventory_allocations (supplier_id, created_at)
+          ''');
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -1615,37 +1649,7 @@ class DatabaseHelper {
     }
 
     if (oldVersion < 27) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS sale_inventory_allocations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          sale_id INTEGER NOT NULL,
-          inventory_layer_id INTEGER NOT NULL,
-          purchase_item_id INTEGER NOT NULL,
-          supplier_id INTEGER NOT NULL,
-          units INTEGER NOT NULL,
-          unit_cost REAL NOT NULL,
-          cost_amount REAL NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          is_deleted INTEGER DEFAULT 0,
-          is_synced INTEGER DEFAULT 0,
-          sync_id TEXT UNIQUE NOT NULL,
-          FOREIGN KEY (sale_id) REFERENCES sales (id),
-          FOREIGN KEY (inventory_layer_id) REFERENCES inventory_layers (id),
-          FOREIGN KEY (purchase_item_id) REFERENCES purchase_items (id),
-          FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
-        )
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_sale
-        ON sale_inventory_allocations (sale_id)
-      ''');
-
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_sale_inventory_allocations_supplier
-        ON sale_inventory_allocations (supplier_id, created_at)
-      ''');
+      await _upgradeSaleInventoryAllocationsToV27(db);
     }
 
     if (oldVersion < 27) {

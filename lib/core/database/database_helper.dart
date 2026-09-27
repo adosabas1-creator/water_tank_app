@@ -896,6 +896,25 @@ class DatabaseHelper {
         }
   }
 
+  Future<void> _createExpensesTableToV27(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        expense_type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        expense_date TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER DEFAULT 0,
+        is_synced INTEGER DEFAULT 0,
+        sync_id TEXT UNIQUE NOT NULL,
+        FOREIGN KEY (created_by) REFERENCES users (id)
+      )
+    ''');
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -905,22 +924,7 @@ class DatabaseHelper {
     }
 
     if (oldVersion < 27) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS expenses (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          expense_type TEXT NOT NULL,
-          amount REAL NOT NULL,
-          expense_date TEXT NOT NULL,
-          notes TEXT,
-          created_by INTEGER NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          is_deleted INTEGER DEFAULT 0,
-          is_synced INTEGER DEFAULT 0,
-          sync_id TEXT UNIQUE NOT NULL,
-          FOREIGN KEY (created_by) REFERENCES users (id)
-        )
-      ''');
+      await _createExpensesTableToV27(db);
     }
 
       if (oldVersion < 27) {

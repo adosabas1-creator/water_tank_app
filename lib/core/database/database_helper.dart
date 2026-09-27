@@ -995,6 +995,83 @@ class DatabaseHelper {
           }
         }
   }
+  Future<void> _upgradeSalesTableToV27(Database db) async {
+        final salesColumns = await db.rawQuery(
+          'PRAGMA table_info(sales)',
+        );
+
+        final clientColumn = salesColumns.firstWhere(
+          (column) => column['name'] == 'client_id',
+          orElse: () => <String, Object?>{},
+        );
+
+        final tankColumn = salesColumns.firstWhere(
+          (column) => column['name'] == 'tank_id',
+          orElse: () => <String, Object?>{},
+        );
+
+        final clientIsNotNull = clientColumn['notnull'] == 1;
+        final tankIsNotNull = tankColumn['notnull'] == 1;
+
+        if (clientIsNotNull || tankIsNotNull) {
+          await _safeExec(db, 'ALTER TABLE sales RENAME TO sales_old');
+
+          await db.execute('''
+            CREATE TABLE sales (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sale_number TEXT UNIQUE,
+              client_id INTEGER,
+              tank_id INTEGER,
+              driver_id INTEGER,
+              supplier_id INTEGER NOT NULL,
+              units INTEGER NOT NULL,
+              sale_price REAL NOT NULL,
+              total_amount REAL NOT NULL,
+              cost_amount REAL NOT NULL,
+              profit_amount REAL NOT NULL,
+              sale_date TEXT NOT NULL,
+              payment_status TEXT NOT NULL,
+              client_payment_status TEXT,
+              supplier_payment_status TEXT,
+              created_by_name TEXT,
+              notes TEXT,
+              created_by INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              is_deleted INTEGER DEFAULT 0,
+              is_synced INTEGER DEFAULT 0,
+              sync_id TEXT UNIQUE NOT NULL,
+              FOREIGN KEY (client_id) REFERENCES clients (id),
+              FOREIGN KEY (tank_id) REFERENCES tanks (id),
+              FOREIGN KEY (driver_id) REFERENCES drivers (id),
+              FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
+              FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+          ''');
+
+          await db.execute('''
+            INSERT INTO sales (
+              id, sale_number, client_id, tank_id, driver_id,
+              supplier_id, units, sale_price, total_amount,
+              cost_amount, profit_amount, sale_date, payment_status,
+              client_payment_status, supplier_payment_status, created_by_name,
+              notes, created_by, created_at, updated_at,
+              is_deleted, is_synced, sync_id
+            )
+            SELECT
+              id, sale_number, client_id, tank_id, driver_id,
+              supplier_id, units, sale_price, total_amount,
+              cost_amount, profit_amount, sale_date, payment_status,
+              client_payment_status, supplier_payment_status, created_by_name,
+              notes, created_by, created_at, updated_at,
+              is_deleted, is_synced, sync_id
+            FROM sales_old
+          ''');
+
+          await db.execute('DROP TABLE sales_old');
+        }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -1045,80 +1122,7 @@ class DatabaseHelper {
     }
 
     if (oldVersion < 27) {
-      final salesColumns = await db.rawQuery(
-        'PRAGMA table_info(sales)',
-      );
-
-      final clientColumn = salesColumns.firstWhere(
-        (column) => column['name'] == 'client_id',
-        orElse: () => <String, Object?>{},
-      );
-
-      final tankColumn = salesColumns.firstWhere(
-        (column) => column['name'] == 'tank_id',
-        orElse: () => <String, Object?>{},
-      );
-
-      final clientIsNotNull = clientColumn['notnull'] == 1;
-      final tankIsNotNull = tankColumn['notnull'] == 1;
-
-      if (clientIsNotNull || tankIsNotNull) {
-        await _safeExec(db, 'ALTER TABLE sales RENAME TO sales_old');
-
-        await db.execute('''
-          CREATE TABLE sales (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sale_number TEXT UNIQUE,
-            client_id INTEGER,
-            tank_id INTEGER,
-            driver_id INTEGER,
-            supplier_id INTEGER NOT NULL,
-            units INTEGER NOT NULL,
-            sale_price REAL NOT NULL,
-            total_amount REAL NOT NULL,
-            cost_amount REAL NOT NULL,
-            profit_amount REAL NOT NULL,
-            sale_date TEXT NOT NULL,
-            payment_status TEXT NOT NULL,
-            client_payment_status TEXT,
-            supplier_payment_status TEXT,
-            created_by_name TEXT,
-            notes TEXT,
-            created_by INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            is_deleted INTEGER DEFAULT 0,
-            is_synced INTEGER DEFAULT 0,
-            sync_id TEXT UNIQUE NOT NULL,
-            FOREIGN KEY (client_id) REFERENCES clients (id),
-            FOREIGN KEY (tank_id) REFERENCES tanks (id),
-            FOREIGN KEY (driver_id) REFERENCES drivers (id),
-            FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
-            FOREIGN KEY (created_by) REFERENCES users (id)
-          )
-        ''');
-
-        await db.execute('''
-          INSERT INTO sales (
-            id, sale_number, client_id, tank_id, driver_id,
-            supplier_id, units, sale_price, total_amount,
-            cost_amount, profit_amount, sale_date, payment_status,
-            client_payment_status, supplier_payment_status, created_by_name,
-            notes, created_by, created_at, updated_at,
-            is_deleted, is_synced, sync_id
-          )
-          SELECT
-            id, sale_number, client_id, tank_id, driver_id,
-            supplier_id, units, sale_price, total_amount,
-            cost_amount, profit_amount, sale_date, payment_status,
-            client_payment_status, supplier_payment_status, created_by_name,
-            notes, created_by, created_at, updated_at,
-            is_deleted, is_synced, sync_id
-          FROM sales_old
-        ''');
-
-        await db.execute('DROP TABLE sales_old');
-      }
+      await _upgradeSalesTableToV27(db);
     }
 
     if (oldVersion < 27) {

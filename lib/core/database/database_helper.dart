@@ -1144,6 +1144,62 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<void> _upgradeOperationLogsToV36(Database db) async {
+    await _addColumnIfMissing(
+      db,
+      'operation_logs',
+      'user_sync_id',
+      'TEXT',
+    );
+
+    await _addColumnIfMissing(
+      db,
+      'operation_logs',
+      'record_sync_id',
+      'TEXT',
+    );
+
+    await db.execute('''
+        UPDATE operation_logs
+        SET user_sync_id = (
+          SELECT u.sync_id
+          FROM users u
+          WHERE u.id = operation_logs.user_id
+        )
+        WHERE user_sync_id IS NULL
+           OR TRIM(user_sync_id) = ''
+      ''');
+
+    await db.execute('''
+        UPDATE operation_logs
+        SET record_sync_id = (
+          SELECT c.sync_id
+          FROM clients c
+          WHERE c.id = operation_logs.record_id
+        )
+        WHERE table_name = 'clients'
+          AND (record_sync_id IS NULL OR TRIM(record_sync_id) = '')
+      ''');
+
+    await db.execute('''
+        UPDATE operation_logs
+        SET record_sync_id = (
+          SELECT s.sync_id
+          FROM suppliers s
+          WHERE s.id = operation_logs.record_id
+        )
+        WHERE table_name = 'suppliers'
+          AND (record_sync_id IS NULL OR TRIM(record_sync_id) = '')
+      ''');
+
+    await db.execute('''
+        UPDATE operation_logs
+        SET is_synced = 0
+        WHERE user_sync_id IS NOT NULL
+           OR record_sync_id IS NOT NULL
+      ''');
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -1677,59 +1733,7 @@ class DatabaseHelper {
     }
 
     if (oldVersion < 36) {
-      await _addColumnIfMissing(
-        db,
-        'operation_logs',
-        'user_sync_id',
-        'TEXT',
-      );
-
-      await _addColumnIfMissing(
-        db,
-        'operation_logs',
-        'record_sync_id',
-        'TEXT',
-      );
-
-      await db.execute('''
-          UPDATE operation_logs
-          SET user_sync_id = (
-            SELECT u.sync_id
-            FROM users u
-            WHERE u.id = operation_logs.user_id
-          )
-          WHERE user_sync_id IS NULL
-             OR TRIM(user_sync_id) = ''
-        ''');
-
-      await db.execute('''
-          UPDATE operation_logs
-          SET record_sync_id = (
-            SELECT c.sync_id
-            FROM clients c
-            WHERE c.id = operation_logs.record_id
-          )
-          WHERE table_name = 'clients'
-            AND (record_sync_id IS NULL OR TRIM(record_sync_id) = '')
-        ''');
-
-      await db.execute('''
-          UPDATE operation_logs
-          SET record_sync_id = (
-            SELECT s.sync_id
-            FROM suppliers s
-            WHERE s.id = operation_logs.record_id
-          )
-          WHERE table_name = 'suppliers'
-            AND (record_sync_id IS NULL OR TRIM(record_sync_id) = '')
-        ''');
-
-      await db.execute('''
-          UPDATE operation_logs
-          SET is_synced = 0
-          WHERE user_sync_id IS NOT NULL
-             OR record_sync_id IS NOT NULL
-        ''');
+      await _upgradeOperationLogsToV36(db);
     }
 
     // الإصدار 37: تجهيز تخزين آمن لكلمات المرور وأكواد الاسترداد.

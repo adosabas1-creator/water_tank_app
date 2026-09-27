@@ -540,6 +540,14 @@ class AuthService {
     }
 
     // 2. New device: bootstrap login from the public login directory.
+    return _loginNewDevice(cleanUsername, password, db);
+  }
+
+  Future<User?> _loginNewDevice(
+    String cleanUsername,
+    String password,
+    Database db,
+  ) async {
     // The device does not have a local account yet, so it cannot read
     // the protected user_directory until Firebase authentication succeeds.
     try {

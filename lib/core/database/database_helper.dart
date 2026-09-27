@@ -639,6 +639,158 @@ class DatabaseHelper {
     }
   }
 
+  Future<void> _upgradeOperationLogsToV32(Database db) async {
+    await db.transaction((txn) async {
+      final columns = await txn.rawQuery('PRAGMA table_info(operation_logs)');
+      final existingColumns = columns
+          .map((row) => row['name']?.toString())
+          .whereType<String>()
+          .toSet();
+
+      if (existingColumns.isEmpty) {
+        await txn.execute('''
+          CREATE TABLE operation_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sync_id TEXT UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL,
+          user_sync_id TEXT,
+            action TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            record_id INTEGER NOT NULL,
+          record_sync_id TEXT,
+            details TEXT,
+            timestamp TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            is_deleted INTEGER DEFAULT 0,
+            is_synced INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+          )
+        ''');
+        return;
+      }
+
+      await txn
+          .execute('ALTER TABLE operation_logs RENAME TO operation_logs_old');
+
+      await txn.execute('''
+        CREATE TABLE operation_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sync_id TEXT UNIQUE NOT NULL,
+          user_id INTEGER NOT NULL,
+          user_sync_id TEXT,
+          action TEXT NOT NULL,
+          table_name TEXT NOT NULL,
+          record_id INTEGER NOT NULL,
+          record_sync_id TEXT,
+          details TEXT,
+          timestamp TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER DEFAULT 0,
+          is_synced INTEGER DEFAULT 0,
+          FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+      ''');
+
+      final oldColumns =
+          await txn.rawQuery('PRAGMA table_info(operation_logs_old)');
+      final oldNames = oldColumns
+          .map((row) => row['name']?.toString())
+          .whereType<String>()
+          .toSet();
+
+      final now = DateTime.now().toIso8601String();
+
+      final actionExpr = oldNames.contains('action')
+          ? 'action'
+          : oldNames.contains('operation_type')
+              ? 'operation_type'
+              : "''";
+
+      final timestampExpr = oldNames.contains('timestamp')
+          ? 'timestamp'
+          : oldNames.contains('created_at')
+              ? 'created_at'
+              : "'$now'";
+
+      final detailsExpr = oldNames.contains('details') ? 'details' : 'NULL';
+
+      // operation_logs.user_id يرتبط بـ users عبر Foreign Key.
+      // عند ترقية قاعدة قديمة قد توجد سجلات تشير إلى مستخدم غير موجود.
+      // نستخدم مستخدمًا صالحًا كمرجع بديل، أو نحذف سجلات السجل القديمة
+      // إذا لم يوجد أي مستخدم بعد، بدل فشل ترقية قاعدة البيانات بالكامل.
+      final users = await txn.query(
+        'users',
+        columns: ['id'],
+        where: 'is_deleted = 0',
+        orderBy: 'id ASC',
+        limit: 1,
+      );
+
+      final fallbackUserId =
+          users.isNotEmpty ? (users.first['id'] as num).toInt() : null;
+
+      if (fallbackUserId == null) {
+        await txn.execute('DELETE FROM operation_logs_old');
+      }
+
+      final userIdExpr = fallbackUserId != null
+          ? (oldNames.contains('user_id')
+              ? 'CASE WHEN EXISTS (SELECT 1 FROM users WHERE id = user_id AND is_deleted = 0) THEN user_id ELSE $fallbackUserId END'
+              : '$fallbackUserId')
+          : 'NULL';
+
+      final tableNameExpr =
+          oldNames.contains('table_name') ? 'table_name' : "''";
+
+      final recordIdExpr = oldNames.contains('record_id') ? 'record_id' : '0';
+
+      final isDeletedExpr =
+          oldNames.contains('is_deleted') ? 'COALESCE(is_deleted, 0)' : '0';
+
+      final isSyncedExpr =
+          oldNames.contains('is_synced') ? 'COALESCE(is_synced, 0)' : '0';
+
+      final syncIdExpr = oldNames.contains('sync_id')
+          ? "CASE WHEN sync_id IS NULL OR TRIM(sync_id) = '' THEN 'legacy_operation_log_' || id ELSE sync_id END"
+          : "'legacy_operation_log_' || id";
+
+      await txn.execute('''
+        INSERT INTO operation_logs (
+          id,
+          sync_id,
+          user_id,
+          action,
+          table_name,
+          record_id,
+          details,
+          timestamp,
+          created_at,
+          updated_at,
+          is_deleted,
+          is_synced
+        )
+        SELECT
+          id,
+          $syncIdExpr,
+          $userIdExpr,
+          $actionExpr,
+          $tableNameExpr,
+          $recordIdExpr,
+          $detailsExpr,
+          $timestampExpr,
+          $timestampExpr,
+          $timestampExpr,
+          $isDeletedExpr,
+          $isSyncedExpr
+        FROM operation_logs_old
+      ''');
+
+      await txn.execute('DROP TABLE operation_logs_old');
+    });
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -1411,157 +1563,9 @@ class DatabaseHelper {
     }
 
     // الإصدار 32: توحيد بنية operation_logs مع النموذج والخدمات والتصفير.
-    if (oldVersion < 32) {
-      await db.transaction((txn) async {
-        final columns = await txn.rawQuery('PRAGMA table_info(operation_logs)');
-        final existingColumns = columns
-            .map((row) => row['name']?.toString())
-            .whereType<String>()
-            .toSet();
-
-        if (existingColumns.isEmpty) {
-          await txn.execute('''
-            CREATE TABLE operation_logs (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              sync_id TEXT UNIQUE NOT NULL,
-              user_id INTEGER NOT NULL,
-            user_sync_id TEXT,
-              action TEXT NOT NULL,
-              table_name TEXT NOT NULL,
-              record_id INTEGER NOT NULL,
-            record_sync_id TEXT,
-              details TEXT,
-              timestamp TEXT NOT NULL,
-              created_at TEXT NOT NULL,
-              updated_at TEXT NOT NULL,
-              is_deleted INTEGER DEFAULT 0,
-              is_synced INTEGER DEFAULT 0,
-              FOREIGN KEY (user_id) REFERENCES users (id)
-            )
-          ''');
-          return;
-        }
-
-        await txn
-            .execute('ALTER TABLE operation_logs RENAME TO operation_logs_old');
-
-        await txn.execute('''
-          CREATE TABLE operation_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sync_id TEXT UNIQUE NOT NULL,
-            user_id INTEGER NOT NULL,
-            user_sync_id TEXT,
-            action TEXT NOT NULL,
-            table_name TEXT NOT NULL,
-            record_id INTEGER NOT NULL,
-            record_sync_id TEXT,
-            details TEXT,
-            timestamp TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            is_deleted INTEGER DEFAULT 0,
-            is_synced INTEGER DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-          )
-        ''');
-
-        final oldColumns =
-            await txn.rawQuery('PRAGMA table_info(operation_logs_old)');
-        final oldNames = oldColumns
-            .map((row) => row['name']?.toString())
-            .whereType<String>()
-            .toSet();
-
-        final now = DateTime.now().toIso8601String();
-
-        final actionExpr = oldNames.contains('action')
-            ? 'action'
-            : oldNames.contains('operation_type')
-                ? 'operation_type'
-                : "''";
-
-        final timestampExpr = oldNames.contains('timestamp')
-            ? 'timestamp'
-            : oldNames.contains('created_at')
-                ? 'created_at'
-                : "'$now'";
-
-        final detailsExpr = oldNames.contains('details') ? 'details' : 'NULL';
-
-        // operation_logs.user_id يرتبط بـ users عبر Foreign Key.
-        // عند ترقية قاعدة قديمة قد توجد سجلات تشير إلى مستخدم غير موجود.
-        // نستخدم مستخدمًا صالحًا كمرجع بديل، أو نحذف سجلات السجل القديمة
-        // إذا لم يوجد أي مستخدم بعد، بدل فشل ترقية قاعدة البيانات بالكامل.
-        final users = await txn.query(
-          'users',
-          columns: ['id'],
-          where: 'is_deleted = 0',
-          orderBy: 'id ASC',
-          limit: 1,
-        );
-
-        final fallbackUserId =
-            users.isNotEmpty ? (users.first['id'] as num).toInt() : null;
-
-        if (fallbackUserId == null) {
-          await txn.execute('DELETE FROM operation_logs_old');
-        }
-
-        final userIdExpr = fallbackUserId != null
-            ? (oldNames.contains('user_id')
-                ? 'CASE WHEN EXISTS (SELECT 1 FROM users WHERE id = user_id AND is_deleted = 0) THEN user_id ELSE $fallbackUserId END'
-                : '$fallbackUserId')
-            : 'NULL';
-
-        final tableNameExpr =
-            oldNames.contains('table_name') ? 'table_name' : "''";
-
-        final recordIdExpr = oldNames.contains('record_id') ? 'record_id' : '0';
-
-        final isDeletedExpr =
-            oldNames.contains('is_deleted') ? 'COALESCE(is_deleted, 0)' : '0';
-
-        final isSyncedExpr =
-            oldNames.contains('is_synced') ? 'COALESCE(is_synced, 0)' : '0';
-
-        final syncIdExpr = oldNames.contains('sync_id')
-            ? "CASE WHEN sync_id IS NULL OR TRIM(sync_id) = '' THEN 'legacy_operation_log_' || id ELSE sync_id END"
-            : "'legacy_operation_log_' || id";
-
-        await txn.execute('''
-          INSERT INTO operation_logs (
-            id,
-            sync_id,
-            user_id,
-            action,
-            table_name,
-            record_id,
-            details,
-            timestamp,
-            created_at,
-            updated_at,
-            is_deleted,
-            is_synced
-          )
-          SELECT
-            id,
-            $syncIdExpr,
-            $userIdExpr,
-            $actionExpr,
-            $tableNameExpr,
-            $recordIdExpr,
-            $detailsExpr,
-            $timestampExpr,
-            $timestampExpr,
-            $timestampExpr,
-            $isDeletedExpr,
-            $isSyncedExpr
-          FROM operation_logs_old
-        ''');
-
-        await txn.execute('DROP TABLE operation_logs_old');
-      });
-    }
+      if (oldVersion < 32) {
+        await _upgradeOperationLogsToV32(db);
+      }
 
     // الإصدار 33: إصلاح سلامة operation_logs بعد الترقية.
     if (oldVersion < 33) {

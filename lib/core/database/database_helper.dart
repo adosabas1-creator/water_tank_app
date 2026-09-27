@@ -1243,6 +1243,31 @@ class DatabaseHelper {
         }
   }
 
+  Future<void> _upgradeAccountTransactionsToV27(Database db) async {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS account_transactions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              account_type TEXT NOT NULL,
+              reference_id INTEGER NOT NULL,
+              amount REAL NOT NULL,
+              transaction_type TEXT NOT NULL,
+              transaction_date TEXT NOT NULL,
+              notes TEXT,
+              created_by INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              is_deleted INTEGER DEFAULT 0,
+              is_synced INTEGER DEFAULT 0,
+              sync_id TEXT UNIQUE NOT NULL,
+              FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+          ''');
+          await db.execute('''
+            CREATE INDEX IF NOT EXISTS idx_account_transactions_reference
+            ON account_transactions (account_type, reference_id, transaction_date)
+          ''');
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -1583,28 +1608,7 @@ class DatabaseHelper {
       await _upgradeCoreTablesSyncIdsToV27(db);
     }
     if (oldVersion < 27) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS account_transactions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          account_type TEXT NOT NULL,
-          reference_id INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          transaction_type TEXT NOT NULL,
-          transaction_date TEXT NOT NULL,
-          notes TEXT,
-          created_by INTEGER NOT NULL,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL,
-          is_deleted INTEGER DEFAULT 0,
-          is_synced INTEGER DEFAULT 0,
-          sync_id TEXT UNIQUE NOT NULL,
-          FOREIGN KEY (created_by) REFERENCES users (id)
-        )
-      ''');
-      await db.execute('''
-        CREATE INDEX IF NOT EXISTS idx_account_transactions_reference
-        ON account_transactions (account_type, reference_id, transaction_date)
-      ''');
+      await _upgradeAccountTransactionsToV27(db);
     }
     if (oldVersion < 27) {
       await _upgradePurchaseTablesToV27(db);

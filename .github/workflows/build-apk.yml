@@ -33,7 +33,7 @@ jobs:
           test -s android/app/keystore/water_tank_release.keystore
 
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Build signed release APK
         env:

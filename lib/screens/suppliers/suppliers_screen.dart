@@ -400,7 +400,13 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+    numberCtrl.dispose();
+    nameCtrl.dispose();
+    phoneCtrl.dispose();
+    locationCtrl.dispose();
+    notesCtrl.dispose();
+  });
   }
 
   void _confirmDelete(Supplier supplier) {

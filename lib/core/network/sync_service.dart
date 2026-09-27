@@ -56,6 +56,17 @@ class SyncService {
     debugPrint('Automatic sync listener started (connectivity + 10s periodic)');
   }
 
+  Future<void> stopAutoSync() async {
+    await _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
+
+    _periodicSyncTimer?.cancel();
+    _periodicSyncTimer = null;
+
+    _autoSyncStarted = false;
+    debugPrint('Automatic sync listener stopped');
+  }
+
   Future<bool> _ready() async =>
       await _connectivity.isOnline() && _auth.currentUser != null;
 

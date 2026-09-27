@@ -236,7 +236,11 @@ class _ClientsScreenState extends State<ClientsScreen> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      phoneCtrl.dispose();
+      addressCtrl.dispose();
+    });
   }
 
   void _confirmDelete(Client client) {

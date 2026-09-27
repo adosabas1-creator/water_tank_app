@@ -243,7 +243,12 @@ class _DriversScreenState extends State<DriversScreen> {
           ],
         );
       },
-    );
+    ).whenComplete(() {
+    nameCtrl.dispose();
+    phoneCtrl.dispose();
+    licenseCtrl.dispose();
+    notesCtrl.dispose();
+  });
   }
 
   void _confirmDelete(Driver driver) {

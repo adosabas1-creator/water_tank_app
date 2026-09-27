@@ -244,7 +244,12 @@ class _TanksScreenState extends State<TanksScreen> {
           ],
         );
       },
-    );
+    ).whenComplete(() {
+    tankNumberCtrl.dispose();
+    capacityCtrl.dispose();
+    driverIdCtrl.dispose();
+    notesCtrl.dispose();
+  });
   }
 
   void _confirmDelete(Tank tank) {

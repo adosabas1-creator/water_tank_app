@@ -364,7 +364,16 @@ class _FillingScreenState extends State<FillingScreen> {
           ],
         );
       },
-    );
+    ).whenComplete(() {
+    operationNumberCtrl.dispose();
+    tankIdCtrl.dispose();
+    supplierIdCtrl.dispose();
+    unitsCtrl.dispose();
+    purchasePriceCtrl.dispose();
+    operationDateCtrl.dispose();
+    employeeIdCtrl.dispose();
+    notesCtrl.dispose();
+  });
   }
 
   void _showDialogError(

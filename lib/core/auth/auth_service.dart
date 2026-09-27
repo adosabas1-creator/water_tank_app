@@ -342,6 +342,20 @@ class AuthService {
     );
 
     if (localRows.isNotEmpty) {
+      return _loginLocalUser(cleanUsername, password, db, localRows);
+    }
+
+    // 2. New device: bootstrap login from the public login directory.
+    return _loginNewDevice(cleanUsername, password, db);
+  }
+
+
+  Future<User?> _loginLocalUser(
+    String cleanUsername,
+    String password,
+    Database db,
+    List<Map<String, Object?>> localRows,
+  ) async {
       final localUser = User.fromMap(localRows.first);
 
       var passwordValid = false;
@@ -537,10 +551,6 @@ class AuthService {
       }
 
       return authenticatedLocalUser;
-    }
-
-    // 2. New device: bootstrap login from the public login directory.
-    return _loginNewDevice(cleanUsername, password, db);
   }
 
   Future<User?> _loginNewDevice(

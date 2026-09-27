@@ -1200,6 +1200,49 @@ class DatabaseHelper {
       ''');
   }
 
+  Future<void> _upgradeOperationLogsToV35(Database db) async {
+        const syncTables = <String>[
+          'users',
+          'clients',
+          'suppliers',
+          'drivers',
+          'tanks',
+          'filling_operations',
+          'sales',
+          'payments',
+          'account_transactions',
+          'purchase_invoices',
+          'purchase_items',
+          'inventory_layers',
+          'sale_inventory_allocations',
+          'expenses',
+          'salaries',
+          'operation_logs',
+        ];
+
+        const uuid = Uuid();
+
+        for (final table in syncTables) {
+          final rows = await db.query(
+            table,
+            columns: ['id'],
+            where: "sync_id IS NULL OR TRIM(sync_id) = ''",
+          );
+
+          for (final row in rows) {
+            await db.update(
+              table,
+              {
+                'sync_id': uuid.v4(),
+                'is_synced': 0,
+              },
+              where: 'id = ?',
+              whereArgs: [row['id']],
+            );
+          }
+        }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
@@ -1690,46 +1733,7 @@ class DatabaseHelper {
     }
 
     if (oldVersion < 35) {
-      const syncTables = <String>[
-        'users',
-        'clients',
-        'suppliers',
-        'drivers',
-        'tanks',
-        'filling_operations',
-        'sales',
-        'payments',
-        'account_transactions',
-        'purchase_invoices',
-        'purchase_items',
-        'inventory_layers',
-        'sale_inventory_allocations',
-        'expenses',
-        'salaries',
-        'operation_logs',
-      ];
-
-      const uuid = Uuid();
-
-      for (final table in syncTables) {
-        final rows = await db.query(
-          table,
-          columns: ['id'],
-          where: "sync_id IS NULL OR TRIM(sync_id) = ''",
-        );
-
-        for (final row in rows) {
-          await db.update(
-            table,
-            {
-              'sync_id': uuid.v4(),
-              'is_synced': 0,
-            },
-            where: 'id = ?',
-            whereArgs: [row['id']],
-          );
-        }
-      }
+      await _upgradeOperationLogsToV35(db);
     }
 
     if (oldVersion < 36) {

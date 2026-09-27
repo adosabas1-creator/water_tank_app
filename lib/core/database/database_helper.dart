@@ -872,32 +872,36 @@ class DatabaseHelper {
       }
   }
 
+  Future<void> _ensureExpensesTableToV27(Database db) async {
+        final tables = await db.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='expenses'",
+        );
+        if (tables.isEmpty) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS expenses (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              expense_type TEXT NOT NULL,
+              amount REAL NOT NULL,
+              expense_date TEXT NOT NULL,
+              notes TEXT,
+              created_by INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              is_deleted INTEGER DEFAULT 0,
+              is_synced INTEGER DEFAULT 0,
+              sync_id TEXT UNIQUE NOT NULL,
+              FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+          ''');
+        }
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // ✅ إصلاح جذري: فحص كل الجداول الأساسية وإنشاؤها إن كانت مفقودة.
     // يُنفَّذ دائمًا (بغض النظر عن الإصدار) لضمان سلامة قاعدة البيانات.
     // ✅ إصلاح: إنشاء expenses إن كانت مفقودة
     if (oldVersion < 27) {
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='expenses'",
-      );
-      if (tables.isEmpty) {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            expense_type TEXT NOT NULL,
-            amount REAL NOT NULL,
-            expense_date TEXT NOT NULL,
-            notes TEXT,
-            created_by INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            is_deleted INTEGER DEFAULT 0,
-            is_synced INTEGER DEFAULT 0,
-            sync_id TEXT UNIQUE NOT NULL,
-            FOREIGN KEY (created_by) REFERENCES users (id)
-          )
-        ''');
-      }
+      await _ensureExpensesTableToV27(db);
     }
 
     if (oldVersion < 27) {

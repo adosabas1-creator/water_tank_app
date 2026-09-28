@@ -35,8 +35,10 @@ class _SalariesScreenState extends State<SalariesScreen> {
       setState(() {
         _users = users;
       });
-    } catch (_) {
+    } catch (e, stackTrace) {
       // تبقى قائمة المستخدمين فارغة إذا تعذر تحميلها.
+      debugPrint('Failed to load users for salaries screen: $e');
+      debugPrint('$stackTrace');
     }
   }
 

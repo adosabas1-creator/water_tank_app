@@ -928,19 +928,6 @@ class SyncService {
         : _collection(table);
 
     final snapshot = await collection.get();
-    debugPrint(
-      'FIRESTORE READ TEST: table=$table docs=${snapshot.docs.length}',
-    );
-    if (table == 'clients' || table == 'suppliers') {
-      for (final doc in snapshot.docs.take(5)) {
-        final d = doc.data();
-        debugPrint(
-          'FIRESTORE READ TEST: $table doc=${doc.id} '
-          'sync_id=${d['sync_id']} name=${d['name']} '
-          'updated_at=${d['updated_at']}',
-        );
-      }
-    }
     final columns = await _columns(db, table);
     for (final doc in snapshot.docs) {
       try {
@@ -950,28 +937,10 @@ class SyncService {
         remote['sync_id'] = syncId;
         final existing = await db.query(table,
             where: 'sync_id = ?', whereArgs: [syncId], limit: 1);
-        if (existing.isNotEmpty && (table == 'clients' && remote['sync_id']?.toString() == '03fc6b7f-3d3b-4429-8ab0-5879eebb3aa3')) {
-          debugPrint(
-            'SYNC TIMESTAMP DEBUG: clients AAa '
-            'LOCAL updated_at=${existing.first['updated_at']} '
-            'REMOTE updated_at=${remote['updated_at']} '
-            'LOCAL is_synced=${existing.first['is_synced']}',
-          );
-        }
         if (existing.isNotEmpty && !_remoteIsNewer(existing.first, remote)) {
-          if (table == 'suppliers' || table == 'clients') {
-            debugPrint(
-              '$table DOWNLOAD SKIPPED: already exists sync_id=$syncId',
-            );
-          }
           continue;
         }
         if (existing.isEmpty && remote['updated_at'] == null) {
-          if (table == 'suppliers' || table == 'clients') {
-            debugPrint(
-              '$table DOWNLOAD SKIPPED: missing updated_at sync_id=$syncId',
-            );
-          }
           continue;
         }
 
@@ -981,22 +950,9 @@ class SyncService {
               remote['is_deleted']?.toString().toLowerCase() == 'true';
 
           if (existing.isEmpty && remoteIsDeleted) {
-            if (table == 'suppliers' || table == 'clients') {
-              debugPrint(
-                '$table DOWNLOAD SKIPPED: remote record is deleted '
-                'sync_id=$syncId',
-              );
-            }
             continue;
           }
 
-        if (table == 'suppliers' || table == 'clients') {
-          debugPrint(
-            '$table DOWNLOAD FOUND: sync_id=$syncId '
-            'name=${remote['name']} '
-            'number=${remote['supplier_number'] ?? remote['client_number']}',
-          );
-        }
 
         final data = await _downloadData(db, table, remote);
 
@@ -1010,31 +966,20 @@ class SyncService {
           continue;
         }
 
-        if (table == 'suppliers' || table == 'clients') {
-          debugPrint(
-            '$table DOWNLOAD READY FOR DB: sync_id=$syncId data=$data',
-          );
-        }
         data.removeWhere((key, _) => !columns.contains(key));
         try {
           if (existing.isEmpty) {
-            final insertedId = await db.insert(
+            await db.insert(
               table,
               data,
               conflictAlgorithm: ConflictAlgorithm.abort,
             );
-            debugPrint(
-              '$table DOWNLOAD INSERTED: sync_id=$syncId local_id=$insertedId',
-            );
           } else {
-            final updatedCount = await db.update(
+            await db.update(
               table,
               data,
               where: 'sync_id = ?',
               whereArgs: [syncId],
-            );
-            debugPrint(
-              '$table DOWNLOAD UPDATED: sync_id=$syncId count=$updatedCount',
             );
           }
         } catch (e, stackTrace) {
@@ -1274,14 +1219,8 @@ class SyncService {
       return;
     }
 
-    debugPrint(
-      'SYNC DEBUG: firebaseUser=${_auth.currentUser?.uid} '
-      'localUser=${_currentUser?.username} '
-      'role=${_currentUser?.role}',
-    );
 
     if (!await _ready()) {
-      debugPrint('SYNC DEBUG: NOT READY');
       return;
     }
 
@@ -1316,17 +1255,12 @@ class SyncService {
 
         Future<void> uploadStage(List<String> tables) async {
           if (_criticalSyncRequested) {
-            debugPrint(
-              'SYNC DEBUG: critical sync requested; stopping full upload early',
-            );
             return;
           }
 
           await Future.wait(
             tables.map((table) async {
-              debugPrint('SYNC DEBUG: UPLOAD START table=$table');
               await _uploadTable(table);
-              debugPrint('SYNC DEBUG: UPLOAD DONE table=$table');
             }),
           );
         }
@@ -1367,18 +1301,12 @@ class SyncService {
 
       for (final table in order) {
         if (_criticalSyncRequested) {
-          debugPrint(
-            'SYNC DEBUG: critical sync requested; stopping full download early',
-          );
           break;
         }
 
-        debugPrint('SYNC DEBUG: DOWNLOAD START table=$table');
         await _downloadTable(table);
-        debugPrint('SYNC DEBUG: DOWNLOAD DONE table=$table');
       }
 
-      debugPrint('SYNC DEBUG: COMPLETED SUCCESSFULLY');
       if (!_syncCompletedController.isClosed) {
         _syncCompletedController.add(null);
       }

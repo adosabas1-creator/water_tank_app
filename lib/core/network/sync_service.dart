@@ -27,6 +27,11 @@ class SyncService {
   Timer? _periodicSyncTimer;
   bool _autoSyncStarted = false;
 
+  final StreamController<void> _syncCompletedController =
+      StreamController<void>.broadcast();
+
+  Stream<void> get onSyncCompleted => _syncCompletedController.stream;
+
   static const String businessId = 'alborai_water_tank';
 
   CollectionReference<Map<String, dynamic>> _collection(String table) =>
@@ -1374,6 +1379,9 @@ class SyncService {
       }
 
       debugPrint('SYNC DEBUG: COMPLETED SUCCESSFULLY');
+      if (!_syncCompletedController.isClosed) {
+        _syncCompletedController.add(null);
+      }
     } catch (e, stackTrace) {
       debugPrint('Sync failed: $e');
       debugPrint('$stackTrace');

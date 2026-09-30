@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,7 @@ import '../../services/client_service.dart';
 import '../../services/operation_log_service.dart';
 import '../../services/contact_picker_service.dart';
 import '../../core/network/communication_service.dart';
+import '../../core/network/sync_service.dart';
 import '../../core/auth/user_provider.dart';
 import '../../core/auth/permission_service.dart';
 import '../../core/constants/permissions.dart';
@@ -22,15 +24,28 @@ class _ClientsScreenState extends State<ClientsScreen> {
   final ClientService _service = ClientService();
   final OperationLogService _logService = OperationLogService();
   late Future<List<Client>> _future;
+  StreamSubscription<void>? _syncSubscription;
 
   @override
   void initState() {
     super.initState();
     _future = _service.getAllClients();
+
+    _syncSubscription = SyncService().onSyncCompleted.listen((_) {
+      if (!mounted) return;
+      _refresh();
+    });
   }
 
   void _refresh() {
+    if (!mounted) return;
     setState(() => _future = _service.getAllClients());
+  }
+
+  @override
+  void dispose() {
+    _syncSubscription?.cancel();
+    super.dispose();
   }
 
   @override

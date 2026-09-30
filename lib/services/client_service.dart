@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import '../core/auth/permission_service.dart';
 import '../core/constants/permissions.dart';
 import '../core/database/database_helper.dart';
@@ -18,13 +19,15 @@ class ClientService {
 
   Future<List<Client>> getAllClients() async {
     final db = await _dbHelper.database;
-    final result = await db.query('clients', where: 'is_deleted = 0', orderBy: 'name ASC');
+    final result =
+        await db.query('clients', where: 'is_deleted = 0', orderBy: 'name ASC');
     return result.map((e) => Client.fromMap(e)).toList();
   }
 
   Future<Client?> getClientById(int id) async {
     final db = await _dbHelper.database;
-    final result = await db.query('clients', where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
+    final result = await db
+        .query('clients', where: 'id = ? AND is_deleted = 0', whereArgs: [id]);
     if (result.isNotEmpty) return Client.fromMap(result.first);
     return null;
   }
@@ -34,12 +37,34 @@ class ClientService {
     final db = await _dbHelper.database;
     final data = client.toMap();
     data['is_synced'] = 0;
-    await db.update(
+
+    debugPrint(
+      'CLIENT UPDATE DEBUG: id=${client.id} '
+      'sync_id=${client.syncId} '
+      'name=${client.name} '
+      'updated_at=${client.updatedAt} '
+      'before_sync=0',
+    );
+
+    final affected = await db.update(
       'clients',
       data,
       where: 'id = ? AND is_deleted = 0',
       whereArgs: [client.id],
     );
+
+    final check = await db.query(
+      'clients',
+      where: 'id = ?',
+      whereArgs: [client.id],
+      limit: 1,
+    );
+
+    debugPrint(
+      'CLIENT UPDATE DEBUG: affected=$affected '
+      'saved=${check.isNotEmpty ? check.first : null}',
+    );
+
     unawaited(SyncService().syncAll());
   }
 

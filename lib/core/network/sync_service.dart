@@ -329,6 +329,70 @@ class SyncService {
     return data;
   }
 
+  Future<bool> _shouldUploadRow(
+    String table,
+    Map<String, dynamic> row,
+  ) async {
+    if (table != 'clients' && table != 'suppliers') return true;
+
+    final syncId = row['sync_id']?.toString();
+    if (syncId == null || syncId.isEmpty) return false;
+
+    try {
+      final remoteDoc = await _collection(table).doc(syncId).get();
+
+      if (!remoteDoc.exists) {
+        return true;
+      }
+
+      final remote = remoteDoc.data();
+      if (remote == null) {
+        return true;
+      }
+
+      final localTime =
+          DateTime.tryParse(row['updated_at']?.toString() ?? '');
+      final remoteTime =
+          DateTime.tryParse(remote['updated_at']?.toString() ?? '');
+
+      if (localTime == null || remoteTime == null) {
+        debugPrint(
+          '$table UPLOAD CHECK: unable to compare updated_at '
+          'sync_id=$syncId; allowing upload',
+        );
+        return true;
+      }
+
+      if (remoteTime.isAfter(localTime)) {
+        debugPrint(
+          '$table UPLOAD SKIPPED: remote is newer '
+          'sync_id=$syncId '
+          'local=$localTime remote=$remoteTime',
+        );
+        return false;
+      }
+
+      if (!localTime.isAfter(remoteTime)) {
+        debugPrint(
+          '$table UPLOAD SKIPPED: same timestamp '
+          'sync_id=$syncId updated_at=$localTime',
+        );
+        return false;
+      }
+
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint(
+        '$table UPLOAD CHECK ERROR: sync_id=$syncId error=$e',
+      );
+      debugPrint('$stackTrace');
+
+      // لا نمنع المزامنة بالكامل بسبب فشل الفحص المسبق.
+      // قواعد Firestore ستبقى طبقة الحماية النهائية.
+      return true;
+    }
+  }
+
   Future<void> _uploadTable(String table) async {
     if (!_canUploadTable(table)) return;
     if (!await _ready()) return;
@@ -368,6 +432,15 @@ class SyncService {
         if (syncId == null || syncId.isEmpty) continue;
 
         try {
+          final shouldUpload = await _shouldUploadRow(table, row);
+
+          if (!shouldUpload) {
+            debugPrint(
+              '$table upload skipped by timestamp check: sync_id=$syncId',
+            );
+            continue;
+          }
+
           final data = await _uploadData(db, table, row);
 
           final documentId = table == 'users'
@@ -424,12 +497,68 @@ class SyncService {
       } catch (e, stackTrace) {
         debugPrint('$table batch upload error: $e');
         debugPrint('$stackTrace');
+        debugPrint(
+          '$table batch failed; retrying rows individually.',
+        );
+
+        for (final row in uploadedRows) {
+          final syncId = row['sync_id']?.toString();
+          if (syncId == null || syncId.isEmpty) continue;
+
+          try {
+            final data = await _uploadData(db, table, row);
+
+            final documentId = table == 'users'
+                ? row['firebase_uid']?.toString()
+                : syncId;
+
+            if (documentId == null || documentId.isEmpty) {
+              debugPrint(
+                '$table individual upload skipped: missing document ID',
+              );
+              continue;
+            }
+
+            await collection.doc(documentId).set(
+              data,
+              SetOptions(merge: true),
+            );
+
+            await db.transaction((txn) async {
+              final current = await txn.query(
+                table,
+                columns: ['updated_at'],
+                where: 'id = ?',
+                whereArgs: [row['id']],
+                limit: 1,
+              );
+
+              if (current.isNotEmpty &&
+                  current.first['updated_at'] == row['updated_at']) {
+                await txn.update(
+                  table,
+                  {'is_synced': 1},
+                  where: 'id = ?',
+                  whereArgs: [row['id']],
+                );
+              }
+            });
+
+            debugPrint(
+              '$table individual upload completed: $syncId',
+            );
+          } catch (rowError, rowStackTrace) {
+            debugPrint(
+              '$table individual upload failed for ${row['sync_id']}: $rowError',
+            );
+            debugPrint('$rowStackTrace');
+          }
+        }
       }
     }
   }
 
   bool _remoteIsNewer(Map<String, dynamic> local, Map<String, dynamic> remote) {
-    if ((local['is_synced'] as num? ?? 0).toInt() == 0) return false;
     final r = DateTime.tryParse(remote['updated_at']?.toString() ?? '');
     final l = DateTime.tryParse(local['updated_at']?.toString() ?? '');
     if (r == null || l == null) return false;
@@ -816,6 +945,14 @@ class SyncService {
         remote['sync_id'] = syncId;
         final existing = await db.query(table,
             where: 'sync_id = ?', whereArgs: [syncId], limit: 1);
+        if (existing.isNotEmpty && (table == 'clients' && remote['sync_id']?.toString() == '03fc6b7f-3d3b-4429-8ab0-5879eebb3aa3')) {
+          debugPrint(
+            'SYNC TIMESTAMP DEBUG: clients AAa '
+            'LOCAL updated_at=${existing.first['updated_at']} '
+            'REMOTE updated_at=${remote['updated_at']} '
+            'LOCAL is_synced=${existing.first['is_synced']}',
+          );
+        }
         if (existing.isNotEmpty && !_remoteIsNewer(existing.first, remote)) {
           if (table == 'suppliers' || table == 'clients') {
             debugPrint(

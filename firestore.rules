@@ -11,14 +11,20 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function userDirectoryPath() {
+      return /databases/$(database)/documents/businesses/alborai_water_tank/user_directory/$(request.auth.uid);
+    }
+
+    function userExists() {
+      return signedIn() && exists(userDirectoryPath());
+    }
+
     function userDoc() {
-      return get(
-        /databases/$(database)/documents/businesses/alborai_water_tank/user_directory/$(request.auth.uid)
-      );
+      return get(userDirectoryPath());
     }
 
     function isAdmin() {
-      return signedIn() &&
+      return userExists() &&
         (
           userDoc().data.role == 'admin' ||
           userDoc().data.role == 'deputy_manager'
@@ -26,13 +32,13 @@ service cloud.firestore {
     }
 
     function isManagement() {
-      return signedIn() &&
+      return userExists() &&
         (userDoc().data.role == 'admin' ||
          userDoc().data.role == 'deputy_manager');
     }
 
     function hasPermission(permission) {
-      return signedIn() &&
+      return userExists() &&
         (
           userDoc().data.role == 'admin' ||
           userDoc().data.role == 'deputy_manager' ||
@@ -106,7 +112,8 @@ service cloud.firestore {
         hasPermission('client_statements_view');
 
       allow create: if hasPermission('clients_add');
-      allow update: if hasPermission('clients_edit');
+      allow update: if hasPermission('clients_edit') &&
+        request.resource.data.get('updated_at', '') >= resource.data.get('updated_at', '');
       allow delete: if hasPermission('clients_delete');
     }
 
@@ -121,7 +128,8 @@ service cloud.firestore {
         hasPermission('profits_view');
 
       allow create: if hasPermission('suppliers_add');
-      allow update: if hasPermission('suppliers_edit');
+      allow update: if hasPermission('suppliers_edit') &&
+        request.resource.data.get('updated_at', '') >= resource.data.get('updated_at', '');
       allow delete: if hasPermission('suppliers_delete');
     }
 
@@ -132,7 +140,8 @@ service cloud.firestore {
       allow read: if hasPermission('drivers_view');
 
       allow create: if hasPermission('drivers_add');
-      allow update: if hasPermission('drivers_edit');
+      allow update: if hasPermission('drivers_edit') &&
+        request.resource.data.get('updated_at', '') >= resource.data.get('updated_at', '');
       allow delete: if hasPermission('drivers_delete');
     }
 
@@ -145,7 +154,8 @@ service cloud.firestore {
         hasPermission('profits_view');
 
       allow create: if hasPermission('sales_add');
-      allow update: if hasPermission('sales_edit');
+      allow update: if hasPermission('sales_edit') &&
+        request.resource.data.get('updated_at', '') >= resource.data.get('updated_at', '');
       allow delete: if hasPermission('sales_delete');
     }
 

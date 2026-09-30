@@ -8,6 +8,8 @@ class ConnectivityService {
 
   Future<bool> isOnline() async {
     final result = await _connectivity.checkConnectivity();
-    return !result.contains(ConnectivityResult.none);
+    final online = !result.contains(ConnectivityResult.none);
+    print('CONNECTIVITY DEBUG: result=$result online=$online');
+    return online;
   }
 }

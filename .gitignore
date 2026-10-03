@@ -77,3 +77,11 @@ syncAll-before-*.txt
 
 # === Timestamped backup snapshots ===
 *.backup_*
+
+# === Signing secrets (never commit) ===
+*.jks
+*.keystore
+android/key.properties
+android/app/keystore/
+.env
+coverage/

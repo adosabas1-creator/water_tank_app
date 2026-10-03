@@ -333,7 +333,7 @@ class AuthService {
     final db = await _dbHelper.database;
 
     // 1. Local login: works completely offline.
-    // ندعم الإصدار القديم SHA-256 والإصدار الجديد PBKDF2.
+    // PBKDF2-V2 هو الافتراضي. SHA-256 القديم يُرقّى تلقائياً عند نجاح الدخول.
     final localRows = await db.query(
       'users',
       where: 'username = ? AND is_deleted = 0',
@@ -379,7 +379,7 @@ class AuthService {
         }
       } else {
         // المستخدم القديم: SHA-256.
-        final legacyHash = _hashPassword(password);
+        final legacyHash = _legacySha256ForMigrationOnly(password);
         passwordValid = _constantTimeEquals(
           legacyHash,
           localUser.passwordHash,
@@ -1238,7 +1238,7 @@ class AuthService {
     }
 
     // دعم أكواد الاسترداد القديمة SHA-256 وترقيتها بعد نجاح التحقق.
-    final legacyHash = _hashPassword(cleanRecoveryCode);
+    final legacyHash = _legacySha256ForMigrationOnly(cleanRecoveryCode);
     if (!_constantTimeEquals(legacyHash, storedHash)) {
       return false;
     }
@@ -1311,7 +1311,7 @@ class AuthService {
         return false;
       }
     } else {
-      final legacyHash = _hashPassword(cleanRecoveryCode);
+      final legacyHash = _legacySha256ForMigrationOnly(cleanRecoveryCode);
       verified = _constantTimeEquals(legacyHash, storedHash);
     }
 
@@ -1350,7 +1350,9 @@ class AuthService {
     return true;
   }
 
-  String _hashPassword(String password) {
+  /// تحقق فقط من تجزئات SHA-256 القديمة لترقيتها إلى PBKDF2.
+  /// لا يُستخدم لأي كتابة جديدة.
+  String _legacySha256ForMigrationOnly(String password) {
     return sha256.convert(utf8.encode(password)).toString();
   }
 

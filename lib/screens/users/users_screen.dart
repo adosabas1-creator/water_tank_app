@@ -1170,9 +1170,55 @@ class _UsersScreenState extends State<UsersScreen> {
     }
   }
 
-  Future<void> _createBackup() async {
+
+  Future<String?> _askBackupPassword({required String title, required bool confirm}) async {
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
     try {
-      final path = await _backupService.createManualBackup();
+      return await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text(title),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('التشفير محلي بدون إنترنت. لا تُحفظ كلمة المرور في التطبيق.'),
+                const SizedBox(height: 12),
+                TextField(controller: passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'كلمة مرور النسخة')),
+                if (confirm) ...[
+                  const SizedBox(height: 8),
+                  TextField(controller: confirmController, obscureText: true, decoration: const InputDecoration(labelText: 'تأكيد كلمة المرور')),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إلغاء')),
+              FilledButton(
+                onPressed: () {
+                  final password = passwordController.text;
+                  if (password.trim().length < 8) return;
+                  if (confirm && password != confirmController.text) return;
+                  Navigator.pop(dialogContext, password);
+                },
+                child: const Text('متابعة'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      passwordController.dispose();
+      confirmController.dispose();
+    }
+  }
+
+  Future<void> _createBackup() async {
+    final password = await _askBackupPassword(title: 'تشفير النسخة الاحتياطية', confirm: true);
+    if (password == null) return;
+    try {
+      final path = await _backupService.createManualBackup(password: password);
 
       if (!mounted || path == null) return;
 
@@ -1194,8 +1240,10 @@ class _UsersScreenState extends State<UsersScreen> {
   }
 
   Future<void> _sendBackupByEmail() async {
+    final password = await _askBackupPassword(title: 'تشفير النسخة قبل الإرسال', confirm: true);
+    if (password == null) return;
     try {
-      final path = await _backupService.createManualBackup();
+      final path = await _backupService.createManualBackup(password: password);
 
       if (!mounted || path == null) return;
 
@@ -1241,9 +1289,11 @@ class _UsersScreenState extends State<UsersScreen> {
     );
 
     if (confirmed != true) return;
+    final password = await _askBackupPassword(title: 'كلمة مرور النسخة', confirm: false);
+    if (password == null) return;
 
     try {
-      final restored = await _backupService.restoreBackup();
+      final restored = await _backupService.restoreBackup(password: password);
 
       if (!mounted) return;
 

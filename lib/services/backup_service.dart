@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
@@ -8,12 +9,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/auth/permission_service.dart';
 import '../core/constants/app_constants.dart';
 import '../core/database/database_helper.dart';
+import 'backup_encryption_service.dart';
 
 class BackupService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
+  final BackupEncryptionService _encryption = BackupEncryptionService();
 
-  Future<String?> createManualBackup() async {
+  Future<String?> createManualBackup({required String password}) async {
     PermissionService.requireManagementRole();
+    _encryption.validatePassword(password);
     final directory = await FilePicker.getDirectoryPath(
       dialogTitle: 'اختيار مكان حفظ النسخة الاحتياطية',
     );
@@ -31,17 +35,23 @@ class BackupService {
     }
 
     final destination = File(
-      p.join(directory, 'alborai_backup_${_stamp()}.db'),
+      p.join(directory, 'alborai_backup_${_stamp()}.wtbak'),
     );
 
+    final plainBytes = await source.readAsBytes();
+    final encryptedBytes = await _encryption.encrypt(
+      plainBytes: Uint8List.fromList(plainBytes),
+      password: password,
+    );
     await destination.parent.create(recursive: true);
-    await source.copy(destination.path);
+    await destination.writeAsBytes(encryptedBytes, flush: true);
 
     return destination.path;
   }
 
-  Future<bool> restoreBackup() async {
+  Future<bool> restoreBackup({required String password}) async {
     PermissionService.requireAdmin();
+    _encryption.validatePassword(password);
     final result = await FilePicker.pickFile(
       dialogTitle: 'اختيار النسخة الاحتياطية',
       type: FileType.any,
@@ -56,8 +66,23 @@ class BackupService {
     }
 
     final source = File(selectedPath);
-
-    if (!await _isValidDatabase(source)) {
+    if (!await source.exists()) {
+      throw Exception('ملف النسخة الاحتياطية غير موجود');
+    }
+    final bytes = Uint8List.fromList(await source.readAsBytes());
+    File databaseFile = source;
+    File? tempFile;
+    if (BackupEncryptionService.isEncryptedBackup(bytes)) {
+      final plain = await _encryption.decrypt(
+        encryptedBytes: bytes,
+        password: password,
+      );
+      tempFile = File(p.join(Directory.systemTemp.path, 'alborai_restore_${_stamp()}.db'));
+      await tempFile.writeAsBytes(plain, flush: true);
+      databaseFile = tempFile;
+    }
+    if (!await _isValidDatabase(databaseFile)) {
+      await tempFile?.delete();
       throw Exception(
         'الملف المحدد ليس نسخة احتياطية صالحة لقاعدة بيانات شركة البرعي للمياه',
       );
@@ -77,7 +102,8 @@ class BackupService {
       await current.copy(safetyCopy.path);
     }
 
-    await source.copy(currentPath);
+    await databaseFile.copy(currentPath);
+    await tempFile?.delete();
 
     return true;
   }

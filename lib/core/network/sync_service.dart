@@ -1232,6 +1232,7 @@ class SyncService {
   }
 
   Future<void> syncAll() async {
+    debugPrint('SYNC TRACE: syncAll ENTERED');
     if (_syncInProgress) {
       debugPrint('Sync skipped: another sync is already in progress');
       return;

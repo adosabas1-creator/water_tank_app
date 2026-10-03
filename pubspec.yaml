@@ -28,6 +28,7 @@ dependencies:
   printing: ^5.15.1
   cryptography: ^2.9.0
   cryptography_flutter: ^2.3.4
+  flutter_secure_storage: ^11.2.0
 
 dev_dependencies:
   flutter_test:

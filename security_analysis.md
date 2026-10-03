@@ -1,11 +1,33 @@
+# تقرير الفحص الأمني الشامل - تطبيق خزانات الماء (شركة البرعي)
+
+## 1. تفاصيل خوارزمية PBKDF2 وتخزين البيانات
+* **الخوارزمية (Hash Algorithm):** HMAC-SHA256 (`crypto2.Hmac.sha256()`)
+* **عدد التكرارات (Iterations):** `100,000`
+* **طول الملح (Salt Length):** `16` بايت
+* **طول المفتاح (Bits):** `256` بت
+* **مكان تخزين كلمات المرور:** قاعدة بيانات **SQLite** المحلية (`users` جدول).
+* **مكان تخزين الجلسات:** **SharedPreferences** (لا يوجد استخدام لـ `FlutterSecureStorage`).
+* **تشفير النسخ الاحتياطية (`BackupService`):** **غير مشفرة** (يتم نسخ ملف قاعدة بيانات SQLite خام `.db` مباشرة).
+
+---
+
+## 2. جدول تقييم الأمان (النقطة | الحالة | المخاطرة)
+
+| النقطة الأمنية | الحالة (التنفيذ الحالي) | المخاطرة والتقييم |
+| :--- | :--- | :--- |
+| **خوارزمية PBKDF2** | HMAC-SHA256, 100,000 تكرار, 16 بايت Salt, 256 بت | **منخفضة (آمنة):** ممتازة لمقاومة الهجمات وتحصين كلمات المرور. |
+| **تخزين البيانات الحساسة** | كلمات المرور في SQLite، وتفاصيل الجلسة في **SharedPreferences** (بدون SecureStorage). | **متوسطة:** عرضة للاستخراج في حال حصول شخص على صلاحية Root في الجهاز. |
+| **تشفير النسخ الاحتياطية** | النسخ الاحتياطية عبارة عن نسخ خام (`.db`) بدون أي تشفير. | **عالية:** كشف كامل لبيانات الشركة والمعاملات المالية إن وقع ملف النسخة الاحتياطية في يد شخص غير مصرح له. |
+| **قواعد الفايرسبورغ (Firestore Rules)** | مدخلات `login_directory` تتيح قراءة عامة (`GET`)، والتحقق من التحديثات يعتمد على `updated_at` جهة العميل. | **متوسطة:** إمكانية كشف أسماء المستخدمين عبر `login_directory`، واحتمالية تلاعب العملاء بالتطبيقات العادية في التواقيت الزمنية. |
+
+---
+
+## 3. محتوى ملف `firestore.rules` كاملاً
+```javascript
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ============================================================
-    // Helpers
-    // ============================================================
 
     function signedIn() {
       return request.auth != null;
@@ -46,16 +68,6 @@ service cloud.firestore {
         );
     }
 
-    // ============================================================
-    // login_directory
-    //
-    // مطلوب قبل تسجيل الدخول من جهاز جديد، لذلك يسمح GET فقط.
-    // LIST ممنوع حتى لا يمكن سرد أسماء المستخدمين.
-    //
-    // الكتابة:
-    // - المدير يستطيع الإدارة.
-    // - المستخدم يستطيع تحديث سجله فقط، وبنفس Firebase UID/email.
-    // ============================================================
     match /businesses/alborai_water_tank/login_directory/{username} {
       allow get: if true;
       allow list: if false;
@@ -86,13 +98,6 @@ service cloud.firestore {
         );
     }
 
-    // ============================================================
-    // user_directory
-    //
-    // المستخدم يقرأ ملفه فقط.
-    // المدير يستطيع قراءة جميع المستخدمين لإدارة الحسابات.
-    // الكتابة للمدير فقط.
-    // ============================================================
     match /businesses/alborai_water_tank/user_directory/{userId} {
       allow get: if signedIn() &&
         (userId == request.auth.uid || isAdmin());
@@ -102,9 +107,6 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // ============================================================
-    // Clients
-    // ============================================================
     match /businesses/alborai_water_tank/clients/{document} {
       allow read: if
         hasPermission('clients_view') ||
@@ -117,9 +119,6 @@ service cloud.firestore {
       allow delete: if hasPermission('clients_delete');
     }
 
-    // ============================================================
-    // Suppliers
-    // ============================================================
     match /businesses/alborai_water_tank/suppliers/{document} {
       allow read: if
         hasPermission('suppliers_view') ||
@@ -133,9 +132,6 @@ service cloud.firestore {
       allow delete: if hasPermission('suppliers_delete');
     }
 
-    // ============================================================
-    // Drivers
-    // ============================================================
     match /businesses/alborai_water_tank/drivers/{document} {
       allow read: if hasPermission('drivers_view');
 
@@ -145,9 +141,6 @@ service cloud.firestore {
       allow delete: if hasPermission('drivers_delete');
     }
 
-    // ============================================================
-    // Sales
-    // ============================================================
     match /businesses/alborai_water_tank/sales/{document} {
       allow read: if
         hasPermission('sales_view') ||
@@ -158,10 +151,6 @@ service cloud.firestore {
         request.resource.data.get('updated_at', '') >= resource.data.get('updated_at', '');
       allow delete: if hasPermission('sales_delete');
     }
-
-    // ============================================================
-    // Financial / management data
-    // ============================================================
 
     match /businesses/alborai_water_tank/expenses/{document} {
       allow read: if
@@ -189,10 +178,6 @@ service cloud.firestore {
 
       allow write: if isManagement();
     }
-
-    // ============================================================
-    // Inventory / purchasing / filling
-    // ============================================================
 
     match /businesses/alborai_water_tank/tanks/{document} {
       allow read, write: if isManagement();
@@ -230,29 +215,9 @@ service cloud.firestore {
       allow write: if isManagement();
     }
 
-    // ============================================================
-    // أي مجموعة فرعية غير معرّفة أعلاه لا تحصل على صلاحية تلقائية.
-    // ============================================================
-
-    // ============================================================
-    // Operation logs
-    // لا يسمح بالمزامنة إلا لمن لديه صلاحية logs_view.
-    // ============================================================
-    match /businesses/alborai_water_tank/operation_logs/{document} {
-      allow read: if hasPermission('logs_view');
-
-      allow create: if hasPermission('logs_view');
-
-      allow update: if hasPermission('logs_view') &&
-        request.resource.data.get('updated_at', '') >=
-        resource.data.get('updated_at', '');
-
-      allow delete: if false;
-    }
-
-    // ❌ رفض كل شيء آخر
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+```

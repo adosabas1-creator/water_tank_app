@@ -239,6 +239,12 @@ service cloud.firestore {
     // ============================================================
 
     // ❌ رفض كل شيء آخر
+    match /businesses/alborai_water_tank/operation_logs/{document} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

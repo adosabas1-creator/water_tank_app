@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/user.dart';
@@ -14,33 +15,79 @@ class UserProvider extends ChangeNotifier {
 
   static const String _sessionKey = 'current_user_id';
 
+  /// تخزين آمن للجلسة (Keystore / Keychain).
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
   User? _currentUser;
   User? get currentUser => _currentUser;
 
   bool _isRestoring = false;
   bool get isRestoring => _isRestoring;
 
-  /// يعين المستخدم في الذاكرة ويحفظ جلسته في SharedPreferences.
-  /// إذا كان userId != null يُحفظ، وإلا يُحذف (تسجيل خروج).
+  /// يقرأ معرّف الجلسة من التخزين الآمن، مع ترحيل من SharedPreferences إن وُجد.
+  Future<int?> _readSessionUserId() async {
+    try {
+      final secureValue = await _secureStorage.read(key: _sessionKey);
+      if (secureValue != null && secureValue.isNotEmpty) {
+        return int.tryParse(secureValue);
+      }
+    } catch (e) {
+      debugPrint('secure read session failed, trying SharedPreferences: $e');
+    }
+
+    // ترحيل من SharedPreferences (جلسات قديمة) ثم حذفها.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final legacyId = prefs.getInt(_sessionKey);
+      if (legacyId != null) {
+        await _writeSessionUserId(legacyId);
+        await prefs.remove(_sessionKey);
+        return legacyId;
+      }
+    } catch (e) {
+      debugPrint('legacy SharedPreferences session read failed: $e');
+    }
+
+    return null;
+  }
+
+  /// يكتب معرّف الجلسة في التخزين الآمن، مع fallback إلى SharedPreferences.
+  Future<void> _writeSessionUserId(int? userId) async {
+    try {
+      if (userId != null) {
+        await _secureStorage.write(key: _sessionKey, value: userId.toString());
+      } else {
+        await _secureStorage.delete(key: _sessionKey);
+      }
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_sessionKey);
+      } catch (_) {}
+      return;
+    } catch (e) {
+      debugPrint('secure write session failed, falling back to SharedPreferences: $e');
+    }
+
+    // fallback حتى لا تنكسر الجلسة أوفلاين
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (userId != null) {
+        await prefs.setInt(_sessionKey, userId);
+      } else {
+        await prefs.remove(_sessionKey);
+      }
+    } catch (_) {}
+  }
+
   Future<void> setUser(User? user) async {
     _currentUser = user;
     PermissionService.setCurrentUser(user);
     notifyListeners();
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (user?.id != null) {
-        await prefs.setInt(_sessionKey, user!.id!);
-      } else {
-        await prefs.remove(_sessionKey);
-      }
-    } catch (_) {
-      // تجاهل الأخطاء — الجلسة ستفقد عند الإغلاق لكن التطبيق يعمل
-    }
+    await _writeSessionUserId(user?.id);
   }
 
-  /// يحاول استعادة الجلسة السابقة من SharedPreferences + SQLite.
-  /// يُستدعى مرة واحدة عند بدء التطبيق.
   static Future<void> refreshCurrentUserFromDatabase() async {
     final provider = _instance;
     if (provider == null) return;
@@ -73,13 +120,13 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
+  /// يستعيد الجلسة من التخزين الآمن + SQLite (يعمل أوفلاين).
   Future<void> restoreSession() async {
     _isRestoring = true;
     notifyListeners();
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getInt(_sessionKey);
+      final userId = await _readSessionUserId();
 
       if (userId != null) {
         final db = await DatabaseHelper().database;
@@ -94,7 +141,7 @@ class UserProvider extends ChangeNotifier {
           _currentUser = User.fromMap(rows.first);
           PermissionService.setCurrentUser(_currentUser);
         } else {
-          await prefs.remove(_sessionKey);
+          await _writeSessionUserId(null);
         }
       }
     } catch (e) {
@@ -105,15 +152,10 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
-  /// تسجيل خروج كامل — يمسح الجلسة من الذاكرة ومن SharedPreferences.
   Future<void> logout() async {
     _currentUser = null;
     PermissionService.setCurrentUser(null);
     notifyListeners();
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_sessionKey);
-    } catch (_) {}
+    await _writeSessionUserId(null);
   }
 }

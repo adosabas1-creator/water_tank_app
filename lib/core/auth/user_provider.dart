@@ -16,9 +16,7 @@ class UserProvider extends ChangeNotifier {
   static const String _sessionKey = 'current_user_id';
 
   /// تخزين آمن للجلسة (Keystore / Keychain).
-  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   User? _currentUser;
   User? get currentUser => _currentUser;

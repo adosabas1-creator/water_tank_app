@@ -381,7 +381,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'نظام إدارة صهاريج المياه',
+                    'شركة البرعي للمياه',
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.grey,

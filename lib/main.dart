@@ -94,7 +94,7 @@ class _MyAppState extends State<MyApp> {
       child: MaterialApp(
         navigatorKey: _navigatorKey,
         debugShowCheckedModeBanner: false,
-        title: 'نظام إدارة صهاريج المياه',
+        title: 'شركة البرعي للمياه',
         theme: ThemeData(
           primarySwatch: Colors.blue,
         ),

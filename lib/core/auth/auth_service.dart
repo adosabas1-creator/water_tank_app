@@ -518,8 +518,11 @@ class AuthService {
     // New devices must supply the Firebase email explicitly. This removes
     // the public username -> email lookup from Firestore.
     try {
-      final email = firebaseEmail?.trim() ?? '';
-      if (email.isEmpty || !email.contains('@')) return null;
+      final suppliedEmail = firebaseEmail?.trim() ?? '';
+      final email = suppliedEmail.isNotEmpty
+          ? suppliedEmail
+          : _generateAliasEmail(cleanUsername);
+      if (!email.contains('@')) return null;
 
       // Authenticate first. After this succeeds, protected Firestore
       // collections such as user_directory become readable.
@@ -778,18 +781,6 @@ class AuthService {
     );
     if (duplicate.isNotEmpty) throw ArgumentError('اسم المستخدم مستخدم بالفعل');
 
-    // ✅ حفظ username القديم قبل التحديث
-    final oldRows = await db.query(
-      'users',
-      columns: ['username'],
-      where: 'id = ? AND is_deleted = 0',
-      whereArgs: [userId],
-      limit: 1,
-    );
-    final oldUsername = oldRows.isNotEmpty
-        ? oldRows.first['username']?.toString()
-        : null;
-
     final count = await db.update(
       'users',
       {
@@ -815,12 +806,6 @@ class AuthService {
     if (rows.isEmpty) return false;
 
     final updatedUser = User.fromMap(rows.first);
-
-    // ✅ إذا تغيّر username: احذف المستند القديم من login_directory
-    if (oldUsername != null &&
-        oldUsername.trim().isNotEmpty &&
-        oldUsername.trim() != cleanUsername) {
-    }
 
     await _publishUserDirectory(updatedUser);
     return true;

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'core/auth/user_provider.dart';
+import 'core/auth/inactivity_watcher.dart';
 import 'screens/login/login_screen.dart';
 import 'core/database/seed.dart';
 import 'core/database/financial_migration.dart';
@@ -70,39 +71,50 @@ Future<void> _initializeFirebase() async {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
   Widget build(BuildContext context) {
-    // ✅ إذا كانت هناك جلسة محفوظة → ابدأ من Dashboard مباشرة
     final currentUser = context.watch<UserProvider>().currentUser;
     final home = currentUser != null
         ? const DashboardScreen()
         : const LoginScreen();
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'نظام إدارة صهاريج المياه',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
+    return InactivityWatcher(
+      navigatorKey: _navigatorKey,
+      timeout: const Duration(minutes: 15),
+      child: MaterialApp(
+        navigatorKey: _navigatorKey,
+        debugShowCheckedModeBanner: false,
+        title: 'نظام إدارة صهاريج المياه',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+        ),
+        home: home,
+        routes: {
+          '/login': (context) => const LoginScreen(),
+          '/dashboard': (context) => const DashboardScreen(),
+          '/clients': (context) => const ClientsScreen(),
+          '/suppliers': (context) => const SuppliersScreen(),
+          '/sales': (context) => const SalesScreen(),
+          '/purchases': (context) => const PurchasesScreen(),
+          '/payments': (context) => const PaymentsScreen(),
+          '/expenses': (context) => const ExpensesScreen(),
+          '/salaries': (context) => const SalariesScreen(),
+          '/reports': (context) => const ReportsScreen(),
+          '/statements': (context) => const StatementsScreen(),
+          '/users': (context) => const UsersScreen(),
+          '/logs': (context) => const LogsScreen(),
+        },
       ),
-      home: home,
-      routes: {
-        '/login': (context) => const LoginScreen(),
-        '/dashboard': (context) => const DashboardScreen(),
-        '/clients': (context) => const ClientsScreen(),
-        '/suppliers': (context) => const SuppliersScreen(),
-        '/sales': (context) => const SalesScreen(),
-        '/purchases': (context) => const PurchasesScreen(),
-        '/payments': (context) => const PaymentsScreen(),
-        '/expenses': (context) => const ExpensesScreen(),
-        '/salaries': (context) => const SalariesScreen(),
-        '/reports': (context) => const ReportsScreen(),
-        '/statements': (context) => const StatementsScreen(),
-        '/users': (context) => const UsersScreen(),
-        '/logs': (context) => const LogsScreen(),
-      },
     );
   }
 }

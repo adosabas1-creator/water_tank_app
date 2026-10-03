@@ -1107,6 +1107,9 @@ class SyncService {
   bool _syncInProgress = false;
   bool _criticalSyncRequested = false;
 
+  /// هل توجد مزامنة جارية (لـ inactivity timeout وغيره).
+  bool get isSyncInProgress => _syncInProgress;
+
   Future<void> syncCriticalSales() async {
     _criticalSyncRequested = true;
     if (_syncInProgress) {

@@ -85,3 +85,4 @@ android/key.properties
 android/app/keystore/
 .env
 coverage/
+android/app/google-services.json

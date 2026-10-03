@@ -1780,5 +1780,22 @@ class DatabaseHelper {
         'INTEGER DEFAULT 1',
       );
     }
+
+    // الإصدار 38: محاولات تسجيل الدخول (rate limiting أوفلاين).
+    if (oldVersion < 38) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS login_attempts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT NOT NULL,
+          attempted_at TEXT NOT NULL,
+          success INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_login_attempts_user_time
+        ON login_attempts(username, attempted_at)
+      ''');
+    }
   }
 }
+

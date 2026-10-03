@@ -14,6 +14,17 @@ import '../../models/user.dart';
 import '../constants/permissions.dart';
 import 'permission_service.dart';
 
+class LoginRateLimitException implements Exception {
+  LoginRateLimitException(this.retryAfter);
+  final Duration retryAfter;
+
+  @override
+  String toString() {
+    final minutes = retryAfter.inMinutes.clamp(1, 15);
+    return 'تم تجاوز عدد المحاولات. حاول بعد $minutes دقيقة';
+  }
+}
+
 class AuthService {
   final firebase_auth.FirebaseAuth _firebaseAuth =
       firebase_auth.FirebaseAuth.instance;
@@ -326,11 +337,68 @@ class AuthService {
     return (rows.first['id'] as num).toInt();
   }
 
+  static const int _maxLoginAttempts = 5;
+  static const Duration _loginAttemptWindow = Duration(minutes: 15);
+
+  Future<void> _ensureLoginAttemptsTable(Database db) async {
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS login_attempts ('
+      'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+      'username TEXT NOT NULL, '
+      'attempted_at TEXT NOT NULL, '
+      'success INTEGER NOT NULL DEFAULT 0)',
+    );
+  }
+
+  Future<void> _assertNotRateLimited(String username, Database db) async {
+    await _ensureLoginAttemptsTable(db);
+    final windowStart =
+        DateTime.now().subtract(_loginAttemptWindow).toIso8601String();
+    final rows = await db.query(
+      'login_attempts',
+      columns: ['id', 'attempted_at'],
+      where: 'username = ? AND success = 0 AND attempted_at >= ?',
+      whereArgs: [username, windowStart],
+      orderBy: 'attempted_at ASC',
+    );
+    if (rows.length >= _maxLoginAttempts) {
+      final first =
+          DateTime.tryParse(rows.first['attempted_at']?.toString() ?? '');
+      final retryAfter = first == null
+          ? _loginAttemptWindow
+          : _loginAttemptWindow - DateTime.now().difference(first);
+      throw LoginRateLimitException(
+        retryAfter.isNegative ? const Duration(minutes: 1) : retryAfter,
+      );
+    }
+  }
+
+  Future<void> _recordFailedLogin(String username, Database db) async {
+    await _ensureLoginAttemptsTable(db);
+    await db.insert('login_attempts', {
+      'username': username,
+      'attempted_at': DateTime.now().toIso8601String(),
+      'success': 0,
+    });
+  }
+
+  Future<void> _clearFailedLogins(String username, Database db) async {
+    await _ensureLoginAttemptsTable(db);
+    await db.delete(
+      'login_attempts',
+      where: 'username = ?',
+      whereArgs: [username],
+    );
+  }
+
   Future<User?> login(String username, String password) async {
     final cleanUsername = username.trim();
     if (cleanUsername.isEmpty || password.isEmpty) return null;
 
     final db = await _dbHelper.database;
+
+    // Rate limit: 5 محاولات فاشلة كل 15 دقيقة (أوفلاين عبر SQLite).
+    await _assertNotRateLimited(cleanUsername, db);
 
     // 1. Local login: works completely offline.
     // PBKDF2-V2 هو الافتراضي. SHA-256 القديم يُرقّى تلقائياً عند نجاح الدخول.
@@ -342,11 +410,24 @@ class AuthService {
     );
 
     if (localRows.isNotEmpty) {
-      return _loginLocalUser(cleanUsername, password, db, localRows);
+      final user =
+          await _loginLocalUser(cleanUsername, password, db, localRows);
+      if (user == null) {
+        await _recordFailedLogin(cleanUsername, db);
+        return null;
+      }
+      await _clearFailedLogins(cleanUsername, db);
+      return user;
     }
 
     // 2. New device: bootstrap login from the public login directory.
-    return _loginNewDevice(cleanUsername, password, db);
+    final remoteUser = await _loginNewDevice(cleanUsername, password, db);
+    if (remoteUser == null) {
+      await _recordFailedLogin(cleanUsername, db);
+      return null;
+    }
+    await _clearFailedLogins(cleanUsername, db);
+    return remoteUser;
   }
 
 

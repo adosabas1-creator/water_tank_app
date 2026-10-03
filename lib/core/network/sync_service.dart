@@ -72,8 +72,26 @@ class SyncService {
     debugPrint('Automatic sync listener stopped');
   }
 
-  Future<bool> _ready() async =>
-      await _connectivity.isOnline() && _auth.currentUser != null;
+  Future<bool> _ready() async {
+    // Do not let the automatic timer start a sync before login_screen has
+    // published the authenticated local user to PermissionService.
+    final online = await _connectivity.isOnline();
+    final firebaseUser = _auth.currentUser;
+    final localUser = _currentUser;
+
+    if (!online || firebaseUser == null || localUser == null) {
+      return false;
+    }
+
+    // Prevent a stale local session from syncing under a different Firebase UID.
+    final localFirebaseUid = localUser.firebaseUid?.trim() ?? '';
+    if (localFirebaseUid.isNotEmpty &&
+        localFirebaseUid != firebaseUser.uid) {
+      return false;
+    }
+
+    return true;
+  }
 
   dynamic get _currentUser => PermissionService.currentUser;
 

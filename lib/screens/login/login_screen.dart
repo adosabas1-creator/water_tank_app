@@ -323,6 +323,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
 
@@ -331,6 +332,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void dispose() {
     _usernameController.dispose();
+    _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -403,6 +405,28 @@ class _LoginScreenState extends State<LoginScreen> {
                         return 'أدخل اسم المستخدم';
                       }
 
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: 'البريد الإلكتروني',
+                      hintText: 'مطلوب عند تسجيل الحساب على جهاز جديد',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      prefixIcon: const Icon(Icons.email_outlined),
+                    ),
+                    validator: (value) {
+                      final email = value?.trim() ?? '';
+                      if (email.isEmpty) return null;
+                      if (!email.contains('@')) {
+                        return 'أدخل بريدًا إلكترونيًا صحيحًا';
+                      }
                       return null;
                     },
                   ),
@@ -491,6 +515,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = await _authService.login(
         _usernameController.text.trim(),
         _passwordController.text,
+        firebaseEmail: _emailController.text.trim().isEmpty
+            ? null
+            : _emailController.text.trim(),
       );
 
       if (!mounted) return;

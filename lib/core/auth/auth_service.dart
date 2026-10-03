@@ -561,27 +561,11 @@ class AuthService {
     // The device does not have a local account yet, so it cannot read
     // the protected user_directory until Firebase authentication succeeds.
     try {
-      // قراءة بمستند واحد (get) بدل الاستعلام (list).
-      final directoryDoc = await _firestore
-          .collection('businesses')
-          .doc(_businessId)
-          .collection('login_directory')
-          .doc(cleanUsername)
-          .get();
-
-      if (!directoryDoc.exists) return null;
-
-      final directory = directoryDoc.data();
-      if (directory == null) return null;
-      if (directory['is_deleted'] == true) return null;
-
-      final email =
-          directory['firebase_email']?.toString().trim() ?? '';
-
+      // لا نقرأ login_directory قبل المصادقة.
+      // البريد يُشتق محلياً من اسم المستخدم، ثم يتم الدخول عبر Firebase.
+      final email = _generateAliasEmail(cleanUsername);
       if (email.isEmpty) return null;
 
-      // Authenticate first. After this succeeds, protected Firestore
-      // collections such as user_directory become readable.
       final credential =
           await _firebaseAuth.signInWithEmailAndPassword(
         email: email,

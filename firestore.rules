@@ -57,7 +57,11 @@ service cloud.firestore {
     // - المستخدم يستطيع تحديث سجله فقط، وبنفس Firebase UID/email.
     // ============================================================
     match /businesses/alborai_water_tank/login_directory/{username} {
-      allow get: if true;
+      // مغلق للعامة. القراءة بعد المصادقة فقط.
+      allow get: if signedIn() && (
+        isAdmin() ||
+        resource.data.get('firebase_uid', '') == request.auth.uid
+      );
       allow list: if false;
 
       allow create: if isAdmin() ||

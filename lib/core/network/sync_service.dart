@@ -79,17 +79,43 @@ class SyncService {
     final firebaseUser = _auth.currentUser;
     final localUser = _currentUser;
 
+    debugPrint(
+      'SYNC READY DIAG: '
+      'online=$online '
+      'firebaseUser=${firebaseUser != null} '
+      'firebaseUid=${firebaseUser?.uid} '
+      'localUser=${localUser != null} '
+      'localUserId=${localUser?.id} '
+      'localUsername=${localUser?.username} '
+      'localRole=${localUser?.role}',
+    );
+
     if (!online || firebaseUser == null || localUser == null) {
+      debugPrint(
+        'SYNC READY DIAG: NOT READY '
+        'reason='
+        '${!online ? 'offline ' : ''}'
+        '${firebaseUser == null ? 'firebaseUser-null ' : ''}'
+        '${localUser == null ? 'localUser-null' : ''}',
+      );
       return false;
     }
 
     // Prevent a stale local session from syncing under a different Firebase UID.
     final localFirebaseUid = localUser.firebaseUid?.trim() ?? '';
+
     if (localFirebaseUid.isNotEmpty &&
         localFirebaseUid != firebaseUser.uid) {
+      debugPrint(
+        'SYNC READY DIAG: NOT READY '
+        'reason=uid-mismatch '
+        'localFirebaseUid=$localFirebaseUid '
+        'firebaseUid=${firebaseUser.uid}',
+      );
       return false;
     }
 
+    debugPrint('SYNC READY DIAG: READY');
     return true;
   }
 

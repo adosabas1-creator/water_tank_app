@@ -1170,32 +1170,110 @@ class _UsersScreenState extends State<UsersScreen> {
     }
   }
 
+  Future<String?> _askBackupPassword({
+    required String title,
+    required bool confirm,
+  }) async {
+    final passwordCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+
+    try {
+      return await showDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text(title),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: passwordCtrl,
+                  obscureText: true,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'كلمة مرور النسخة',
+                  ),
+                ),
+                if (confirm) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmCtrl,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'تأكيد كلمة المرور',
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                const Text(
+                  'استخدم 8 أحرف أو أكثر. لا يمكن استعادة النسخة المشفرة بدون كلمة المرور.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final password = passwordCtrl.text;
+                  if (password.length < 8) return;
+                  if (confirm && password != confirmCtrl.text) return;
+                  Navigator.pop(dialogContext, password);
+                },
+                child: const Text('متابعة'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      passwordCtrl.dispose();
+      confirmCtrl.dispose();
+    }
+  }
+
   Future<void> _createBackup() async {
     try {
-      final path = await _backupService.createManualBackup();
+      final password = await _askBackupPassword(
+        title: 'تشفير النسخة الاحتياطية',
+        confirm: true,
+      );
+      if (password == null) return;
+
+      final path = await _backupService.createManualBackup(
+        password: password,
+      );
 
       if (!mounted || path == null) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم إنشاء النسخة الاحتياطية بنجاح:\n$path'),
+          content: Text('تم إنشاء النسخة الاحتياطية المشفرة بنجاح:\n$path'),
           duration: const Duration(seconds: 5),
         ),
       );
     } catch (e) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('تعذر إنشاء النسخة الاحتياطية:\n$e'),
-        ),
+        SnackBar(content: Text('تعذر إنشاء النسخة الاحتياطية:\n$e')),
       );
     }
   }
 
   Future<void> _sendBackupByEmail() async {
     try {
-      final path = await _backupService.createManualBackup();
+      final password = await _askBackupPassword(
+        title: 'تشفير النسخة قبل الإرسال',
+        confirm: true,
+      );
+      if (password == null) return;
+
+      final path = await _backupService.createManualBackup(
+        password: password,
+      );
 
       if (!mounted || path == null) return;
 
@@ -1209,11 +1287,8 @@ class _UsersScreenState extends State<UsersScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('تعذر تجهيز النسخة للإرسال بالبريد:\n$e'),
-        ),
+        SnackBar(content: Text('تعذر تجهيز النسخة للإرسال بالبريد:\n$e')),
       );
     }
   }
@@ -1243,7 +1318,15 @@ class _UsersScreenState extends State<UsersScreen> {
     if (confirmed != true) return;
 
     try {
-      final restored = await _backupService.restoreBackup();
+      final password = await _askBackupPassword(
+        title: 'فك تشفير النسخة الاحتياطية',
+        confirm: false,
+      );
+      if (password == null) return;
+
+      final restored = await _backupService.restoreBackup(
+        password: password,
+      );
 
       if (!mounted) return;
 

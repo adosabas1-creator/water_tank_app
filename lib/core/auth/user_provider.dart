@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../models/user.dart';
 import '../database/database_helper.dart';
@@ -13,6 +14,8 @@ class UserProvider extends ChangeNotifier {
   }
 
   static const String _sessionKey = 'current_user_id';
+  static const String _secureSessionKey = 'current_user_id_secure';
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
 
   User? _currentUser;
   User? get currentUser => _currentUser;
@@ -30,8 +33,13 @@ class UserProvider extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (user?.id != null) {
-        await prefs.setInt(_sessionKey, user!.id!);
+        await _secureStorage.write(
+          key: _secureSessionKey,
+          value: user!.id!.toString(),
+        );
+        await prefs.remove(_sessionKey);
       } else {
+        await _secureStorage.delete(key: _secureSessionKey);
         await prefs.remove(_sessionKey);
       }
     } catch (_) {
@@ -79,7 +87,23 @@ class UserProvider extends ChangeNotifier {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getInt(_sessionKey);
+      var secureValue = await _secureStorage.read(key: _secureSessionKey);
+
+      // One-time migration from the old plaintext SharedPreferences value.
+      if (secureValue == null) {
+        final legacyId = prefs.getInt(_sessionKey);
+        if (legacyId != null) {
+          secureValue = legacyId.toString();
+          await _secureStorage.write(
+            key: _secureSessionKey,
+            value: secureValue,
+          );
+          await _secureStorage.delete(key: _secureSessionKey);
+          await prefs.remove(_sessionKey);
+        }
+      }
+
+      final userId = int.tryParse(secureValue ?? '');
 
       if (userId != null) {
         final db = await DatabaseHelper().database;
@@ -113,6 +137,7 @@ class UserProvider extends ChangeNotifier {
 
     try {
       final prefs = await SharedPreferences.getInstance();
+      await _secureStorage.delete(key: _secureSessionKey);
       await prefs.remove(_sessionKey);
     } catch (_) {}
   }

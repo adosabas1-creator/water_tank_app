@@ -57,51 +57,6 @@ class AuthService {
     return firebase_auth.FirebaseAuth.instanceFor(app: app);
   }
 
-  Future<void> _publishLoginDirectory(
-    User user, {
-    bool isDeleted = false,
-  }) async {
-    final username = user.username.trim();
-    final email = user.firebaseEmail?.trim() ?? '';
-    final uid = user.firebaseUid?.trim() ?? '';
-
-    if (username.isEmpty || email.isEmpty || uid.isEmpty) {
-      throw StateError('بيانات دليل تسجيل الدخول غير مكتملة');
-    }
-
-    // ✅ استخدام username كمعرّف للمستند (بدل uid)
-    // السبب: عند تسجيل الدخول من جهاز جديد، السائق يعرف username فقط
-    // وليس uid. استخدام username كمعرّف يسمح بـ `.doc(username).get()`
-    // بدل `.where('username', ...).get()` التي تحتاج صلاحية list.
-    await _firestore
-        .collection('businesses')
-        .doc(_businessId)
-        .collection('login_directory')
-        .doc(username)
-        .set({
-      'username': username,
-      'firebase_email': email,
-      'firebase_uid': uid,
-      'is_deleted': isDeleted,
-      'updated_at': DateTime.now().toIso8601String(),
-    }, SetOptions(merge: true));
-  }
-
-  /// يحذف مستند دليل تسجيل الدخول القديم عند تغيير اسم المستخدم
-  Future<void> _deleteLoginDirectoryByUsername(String username) async {
-    if (username.trim().isEmpty) return;
-    try {
-      await _firestore
-          .collection('businesses')
-          .doc(_businessId)
-          .collection('login_directory')
-          .doc(username.trim())
-          .delete();
-    } catch (_) {
-      // نتجاهل الأخطاء - قد لا يكون المستند موجودًا
-    }
-  }
-
   Future<void> _publishUserDirectory(
     User user, {
     bool isDeleted = false,
@@ -326,7 +281,7 @@ class AuthService {
     return (rows.first['id'] as num).toInt();
   }
 
-  Future<User?> login(String username, String password) async {
+  Future<User?> login(String username, String password, {String? firebaseEmail}) async {
     final cleanUsername = username.trim();
     if (cleanUsername.isEmpty || password.isEmpty) return null;
 
@@ -345,8 +300,9 @@ class AuthService {
       return _loginLocalUser(cleanUsername, password, db, localRows);
     }
 
-    // 2. New device: bootstrap login from the public login directory.
-    return _loginNewDevice(cleanUsername, password, db);
+    // 2. New device: no public username -> email directory is used.
+    // The user supplies the Firebase email explicitly.
+    return _loginNewDevice(cleanUsername, password, db, firebaseEmail: firebaseEmail);
   }
 
 
@@ -556,29 +512,17 @@ class AuthService {
   Future<User?> _loginNewDevice(
     String cleanUsername,
     String password,
-    Database db,
-  ) async {
-    // The device does not have a local account yet, so it cannot read
-    // the protected user_directory until Firebase authentication succeeds.
+    Database db, {
+    String? firebaseEmail,
+  }) async {
+    // New devices must supply the Firebase email explicitly. This removes
+    // the public username -> email lookup from Firestore.
     try {
-      // قراءة بمستند واحد (get) بدل الاستعلام (list).
-      final directoryDoc = await _firestore
-          .collection('businesses')
-          .doc(_businessId)
-          .collection('login_directory')
-          .doc(cleanUsername)
-          .get();
-
-      if (!directoryDoc.exists) return null;
-
-      final directory = directoryDoc.data();
-      if (directory == null) return null;
-      if (directory['is_deleted'] == true) return null;
-
-      final email =
-          directory['firebase_email']?.toString().trim() ?? '';
-
-      if (email.isEmpty) return null;
+      final suppliedEmail = firebaseEmail?.trim() ?? '';
+      final email = suppliedEmail.isNotEmpty
+          ? suppliedEmail
+          : _generateAliasEmail(cleanUsername);
+      if (!email.contains('@')) return null;
 
       // Authenticate first. After this succeeds, protected Firestore
       // collections such as user_directory become readable.
@@ -803,7 +747,6 @@ class AuthService {
 
     try {
       await _publishUserDirectory(user);
-      await _publishLoginDirectory(user);
     } catch (e) {
       // لا نحذف السجل المحلي هنا؛ الاحتفاظ به أفضل من فقدان
       // المستخدم إذا حدث خطأ مؤقت في الشبكة.
@@ -838,18 +781,6 @@ class AuthService {
     );
     if (duplicate.isNotEmpty) throw ArgumentError('اسم المستخدم مستخدم بالفعل');
 
-    // ✅ حفظ username القديم قبل التحديث
-    final oldRows = await db.query(
-      'users',
-      columns: ['username'],
-      where: 'id = ? AND is_deleted = 0',
-      whereArgs: [userId],
-      limit: 1,
-    );
-    final oldUsername = oldRows.isNotEmpty
-        ? oldRows.first['username']?.toString()
-        : null;
-
     final count = await db.update(
       'users',
       {
@@ -876,15 +807,7 @@ class AuthService {
 
     final updatedUser = User.fromMap(rows.first);
 
-    // ✅ إذا تغيّر username: احذف المستند القديم من login_directory
-    if (oldUsername != null &&
-        oldUsername.trim().isNotEmpty &&
-        oldUsername.trim() != cleanUsername) {
-      await _deleteLoginDirectoryByUsername(oldUsername);
-    }
-
     await _publishUserDirectory(updatedUser);
-    await _publishLoginDirectory(updatedUser);
     return true;
   }
 
@@ -943,7 +866,6 @@ class AuthService {
 
       // إزالة اسم المستخدم من دليل تسجيل الدخول.
       if (user.username.trim().isNotEmpty) {
-        await _deleteLoginDirectoryByUsername(user.username);
       }
     }
 

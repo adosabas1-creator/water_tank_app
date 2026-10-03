@@ -46,44 +46,11 @@ service cloud.firestore {
         );
     }
 
-    // ============================================================
-    // login_directory
-    //
-    // مطلوب قبل تسجيل الدخول من جهاز جديد، لذلك يسمح GET فقط.
-    // LIST ممنوع حتى لا يمكن سرد أسماء المستخدمين.
-    //
-    // الكتابة:
-    // - المدير يستطيع الإدارة.
-    // - المستخدم يستطيع تحديث سجله فقط، وبنفس Firebase UID/email.
-    // ============================================================
+    // login_directory is intentionally disabled.
+    // New-device bootstrap uses the email supplied by the user and
+    // Firebase Authentication; no public username -> email lookup exists.
     match /businesses/alborai_water_tank/login_directory/{username} {
-      allow get: if true;
-      allow list: if false;
-
-      allow create: if isAdmin() ||
-        (
-          signedIn() &&
-          request.resource.data.get('username', '') == username &&
-          request.resource.data.get('firebase_uid', '') == request.auth.uid &&
-          request.resource.data.get('firebase_email', '') ==
-            request.auth.token.email
-        );
-
-      allow update: if isAdmin() ||
-        (
-          signedIn() &&
-          resource.data.get('firebase_uid', '') == request.auth.uid &&
-          request.resource.data.get('firebase_uid', '') == request.auth.uid &&
-          request.resource.data.get('username', '') == username &&
-          request.resource.data.get('firebase_email', '') ==
-            request.auth.token.email
-        );
-
-      allow delete: if isAdmin() ||
-        (
-          signedIn() &&
-          resource.data.get('firebase_uid', '') == request.auth.uid
-        );
+      allow read, write: if false;
     }
 
     // ============================================================

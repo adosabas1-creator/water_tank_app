@@ -211,6 +211,26 @@ class SyncService {
     return rows.isEmpty ? null : (rows.first['id'] as num).toInt();
   }
 
+  /// يحوّل قيمة وقت من Firestore/SQLite إلى DateTime.
+  DateTime? _parseTime(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
+  }
+
+  /// وقت التحديث المحلي للمقارنة (updated_at ثم local_updated_at).
+  DateTime? _localComparableTime(Map<String, dynamic> row) {
+    return _parseTime(row['updated_at']) ?? _parseTime(row['local_updated_at']);
+  }
+
+  /// وقت التحديث البعيد — يفضّل local_updated_at ليتوافق مع SQLite.
+  DateTime? _remoteComparableTime(Map<String, dynamic> remote) {
+    return _parseTime(remote['local_updated_at']) ??
+        _parseTime(remote['updated_at']) ??
+        _parseTime(remote['server_updated_at']);
+  }
+
   Future<Map<String, dynamic>> _uploadData(
       Database db, String table, Map<String, dynamic> row) async {
     final data = Map<String, dynamic>.from(row)..remove('id');
@@ -375,6 +395,14 @@ class SyncService {
       data.remove('user_id');
       data.remove('record_id');
     }
+
+    // ساعة الجهاز محلياً + طابع خادم للمراجعة.
+    final localUpdatedAt = row['updated_at']?.toString();
+    if (localUpdatedAt != null && localUpdatedAt.isNotEmpty) {
+      data['local_updated_at'] = localUpdatedAt;
+      data['updated_at'] = localUpdatedAt;
+    }
+    data['server_updated_at'] = FieldValue.serverTimestamp();
     return data;
   }
 
@@ -399,14 +427,12 @@ class SyncService {
         return true;
       }
 
-      final localTime =
-          DateTime.tryParse(row['updated_at']?.toString() ?? '');
-      final remoteTime =
-          DateTime.tryParse(remote['updated_at']?.toString() ?? '');
+      final localTime = _localComparableTime(row);
+      final remoteTime = _remoteComparableTime(remote);
 
       if (localTime == null || remoteTime == null) {
         debugPrint(
-          '$table UPLOAD CHECK: unable to compare updated_at '
+          '$table UPLOAD CHECK: unable to compare timestamps '
           'sync_id=$syncId; allowing upload',
         );
         return true;
@@ -608,8 +634,8 @@ class SyncService {
   }
 
   bool _remoteIsNewer(Map<String, dynamic> local, Map<String, dynamic> remote) {
-    final r = DateTime.tryParse(remote['updated_at']?.toString() ?? '');
-    final l = DateTime.tryParse(local['updated_at']?.toString() ?? '');
+    final r = _remoteComparableTime(remote);
+    final l = _localComparableTime(local);
     if (r == null || l == null) return false;
     return r.isAfter(l);
   }
@@ -619,6 +645,13 @@ class SyncService {
     final data = Map<String, dynamic>.from(remote);
     data.remove('id');
     data.remove('is_synced');
+    // حقول Firestore فقط — لا تُخزَّن في SQLite
+    data.remove('server_updated_at');
+    data.remove('local_updated_at');
+    final remoteLocal = remote['local_updated_at']?.toString();
+    if (remoteLocal != null && remoteLocal.isNotEmpty) {
+      data['updated_at'] = remoteLocal;
+    }
 
     Future<bool> requireRef(
         String key, String localTable, String localKey) async {

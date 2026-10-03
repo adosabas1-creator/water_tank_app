@@ -1284,17 +1284,22 @@ class SyncService {
           );
         }
 
+        debugPrint('SYNC TRACE: uploadStage clients/suppliers/drivers START');
         await uploadStage([
           'clients',
           'suppliers',
           'drivers',
         ]);
+        debugPrint('SYNC TRACE: uploadStage clients/suppliers/drivers DONE');
 
+        debugPrint('SYNC TRACE: uploadStage users/tanks START');
         await uploadStage([
           'users',
           'tanks',
         ]);
+        debugPrint('SYNC TRACE: uploadStage users/tanks DONE');
 
+        debugPrint('SYNC TRACE: uploadStage main START');
         await uploadStage([
           'sales',
           'purchase_invoices',
@@ -1303,28 +1308,39 @@ class SyncService {
           'salaries',
           'operation_logs',
         ]);
+        debugPrint('SYNC TRACE: uploadStage main DONE');
 
+        debugPrint('SYNC TRACE: uploadStage financial START');
         await uploadStage([
           'purchase_items',
           'payments',
           'account_transactions',
         ]);
+        debugPrint('SYNC TRACE: uploadStage financial DONE');
 
+        debugPrint('SYNC TRACE: uploadStage inventory START');
         await uploadStage([
           'inventory_layers',
         ]);
+        debugPrint('SYNC TRACE: uploadStage inventory DONE');
 
+        debugPrint('SYNC TRACE: uploadStage allocations START');
         await uploadStage([
           'sale_inventory_allocations',
         ]);
+        debugPrint('SYNC TRACE: uploadStage allocations DONE');
 
+      debugPrint('SYNC TRACE: DOWNLOAD LOOP START');
       for (final table in order) {
         if (_criticalSyncRequested) {
           break;
         }
 
+        debugPrint('SYNC TRACE: DOWNLOAD START table=$table');
         await _downloadTable(table);
+        debugPrint('SYNC TRACE: DOWNLOAD DONE table=$table');
       }
+      debugPrint('SYNC TRACE: DOWNLOAD LOOP DONE');
 
       if (!_syncCompletedController.isClosed) {
         _syncCompletedController.add(null);

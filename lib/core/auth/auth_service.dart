@@ -391,7 +391,10 @@ class AuthService {
     );
   }
 
-  Future<User?> login(String username, String password) async {
+  Future<User?> login(
+  String username,
+  String password,
+) async {
     final cleanUsername = username.trim();
     if (cleanUsername.isEmpty || password.isEmpty) return null;
 
@@ -420,8 +423,12 @@ class AuthService {
       return user;
     }
 
-    // 2. New device: bootstrap login from the public login directory.
-    final remoteUser = await _loginNewDevice(cleanUsername, password, db);
+    // 2. New device: authenticate with the derived Firebase Alias, then load user_directory.
+    final remoteUser = await _loginNewDevice(
+      cleanUsername,
+      password,
+      db,
+    );
     if (remoteUser == null) {
       await _recordFailedLogin(cleanUsername, db);
       return null;
@@ -642,8 +649,8 @@ class AuthService {
     // The device does not have a local account yet, so it cannot read
     // the protected user_directory until Firebase authentication succeeds.
     try {
-      // لا نقرأ login_directory قبل المصادقة.
-      // البريد يُشتق محلياً من اسم المستخدم، ثم يتم الدخول عبر Firebase.
+      // الجهاز الجديد يشتق Alias Firebase داخليًا من اسم المستخدم.
+      // لا نطلب بريد Firebase من المستخدم ولا نقرأ login_directory.
       final email = _generateAliasEmail(cleanUsername);
       if (email.isEmpty) return null;
 
@@ -668,6 +675,14 @@ class AuthService {
 
       final remote = userDoc.data();
       if (remote == null || remote['is_deleted'] == true) return null;
+
+      // تأكيد أن بريد Firebase المصادق عليه مرتبط باسم المستخدم المطلوب.
+      final remoteUsername =
+          remote['username']?.toString().trim() ?? '';
+      if (remoteUsername != cleanUsername) {
+        await _firebaseAuth.signOut();
+        return null;
+      }
 
       final permissions = <String, bool>{};
       final rawPermissions = remote['permissions'];
@@ -744,9 +759,16 @@ class AuthService {
         ...user.toMap(),
         'id': localId,
       });
-    } on firebase_auth.FirebaseAuthException {
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      debugPrint(
+        'AUTH NEW DEVICE FIREBASE ERROR: '
+        'code=${e.code} message=${e.message}',
+      );
       return null;
-    } catch (_) {
+    } catch (e) {
+      debugPrint(
+        'AUTH NEW DEVICE ERROR: $e',
+      );
       return null;
     }
   }

@@ -324,14 +324,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _firebaseEmailController = TextEditingController();
   final AuthService _authService = AuthService();
 
   bool _isLoading = false;
+  bool _newDeviceMode = false;
 
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _firebaseEmailController.dispose();
     super.dispose();
   }
 
@@ -439,6 +442,49 @@ class _LoginScreenState extends State<LoginScreen> {
                           },
                     child: const Text('نسيت كلمة المرور؟'),
                   ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('تسجيل الدخول من جهاز جديد'),
+                    subtitle: const Text(
+                      'فعّل هذا الخيار إذا لم يكن الحساب موجودًا على هذا الجهاز',
+                    ),
+                    value: _newDeviceMode,
+                    onChanged: _isLoading
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _newDeviceMode = value;
+                            });
+                          },
+                  ),
+                  if (_newDeviceMode) ...[
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _firebaseEmailController,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      decoration: InputDecoration(
+                        labelText: 'بريد Firebase',
+                        hintText: 'البريد المرتبط بحساب Firebase',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: const Icon(Icons.email_outlined),
+                      ),
+                      validator: (value) {
+                        if (!_newDeviceMode) return null;
+                        final email = value?.trim() ?? '';
+                        if (email.isEmpty) {
+                          return 'أدخل بريد Firebase';
+                        }
+                        if (!email.contains('@')) {
+                          return 'أدخل بريدًا إلكترونيًا صحيحًا';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
@@ -491,6 +537,8 @@ class _LoginScreenState extends State<LoginScreen> {
       final user = await _authService.login(
         _usernameController.text.trim(),
         _passwordController.text,
+        firebaseEmail:
+            _newDeviceMode ? _firebaseEmailController.text.trim() : null,
       );
 
       if (!mounted) return;
@@ -500,23 +548,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
         // المزامنة لا يجب أن تمنع الدخول المحلي، خصوصًا بدون إنترنت.
         // نشغّلها في الخلفية ولا ننتظر اكتمالها.
-          // إذا كان الإنترنت متاحًا، نثبت جلسة Firebase حتى تعمل المزامنة.
-          // عند عدم توفر الإنترنت أو فشل Firebase، يبقى الدخول المحلي ناجحًا.
-          final firebaseEmail = user.firebaseEmail?.trim() ?? '';
-          if (firebaseEmail.isNotEmpty) {
-            try {
-              await _authService.signInToFirebase(
-                firebaseEmail,
-                _passwordController.text,
-              );
-            } catch (e) {
-              debugPrint('Firebase online login skipped: $e');
-            }
+        // إذا كان الإنترنت متاحًا، نثبت جلسة Firebase حتى تعمل المزامنة.
+        // عند عدم توفر الإنترنت أو فشل Firebase، يبقى الدخول المحلي ناجحًا.
+        final firebaseEmail = user.firebaseEmail?.trim() ?? '';
+        if (firebaseEmail.isNotEmpty) {
+          try {
+            await _authService.signInToFirebase(
+              firebaseEmail,
+              _passwordController.text,
+            );
+          } catch (e) {
+            debugPrint('Firebase online login skipped: $e');
           }
+        }
 
-          // المزامنة لا يجب أن تمنع الدخول المحلي.
-          // نشغّلها في الخلفية ولا ننتظر اكتمالها.
-          SyncService().syncAll().catchError((_) {});
+        // المزامنة لا يجب أن تمنع الدخول المحلي.
+        // نشغّلها في الخلفية ولا ننتظر اكتمالها.
+        SyncService().syncAll().catchError((_) {});
 
         if (!mounted) return;
 

@@ -393,8 +393,9 @@ class AuthService {
 
   Future<User?> login(
   String username,
-  String password,
-) async {
+  String password, {
+  String? firebaseEmail,
+}) async {
     final cleanUsername = username.trim();
     if (cleanUsername.isEmpty || password.isEmpty) return null;
 
@@ -423,11 +424,12 @@ class AuthService {
       return user;
     }
 
-    // 2. New device: authenticate with the derived Firebase Alias, then load user_directory.
+    // 2. New device: authenticate with the supplied Firebase email, then load user_directory.
     final remoteUser = await _loginNewDevice(
       cleanUsername,
       password,
       db,
+      firebaseEmail: firebaseEmail,
     );
     if (remoteUser == null) {
       await _recordFailedLogin(cleanUsername, db);
@@ -644,15 +646,16 @@ class AuthService {
   Future<User?> _loginNewDevice(
     String cleanUsername,
     String password,
-    Database db,
-  ) async {
+    Database db, {
+    String? firebaseEmail,
+  }) async {
     // The device does not have a local account yet, so it cannot read
     // the protected user_directory until Firebase authentication succeeds.
     try {
-      // الجهاز الجديد يشتق Alias Firebase داخليًا من اسم المستخدم.
-      // لا نطلب بريد Firebase من المستخدم ولا نقرأ login_directory.
-      final email = _generateAliasEmail(cleanUsername);
-      if (email.isEmpty) return null;
+      // الجهاز الجديد يستخدم بريد Firebase الذي أدخله المستخدم.
+      // لا نقرأ login_directory ولا نستخدم Alias للعثور على الحساب.
+      final email = firebaseEmail?.trim() ?? '';
+      if (email.isEmpty || !email.contains('@')) return null;
 
       final credential =
           await _firebaseAuth.signInWithEmailAndPassword(

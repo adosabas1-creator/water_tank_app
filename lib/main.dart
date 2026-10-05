@@ -28,26 +28,25 @@ Future<void> main() async {
 
   await _initializeFirebase();
   await _initializeDatabase();
-  await _runAutomaticBackup();
-  SyncService().startAutoSync();
 
-  // ✅ استعادة الجلسة السابقة (إن وُجدت) قبل تشغيل الواجهة.
-  // هذا يمنع إعادة تسجيل الدخول عند فتح التطبيق من جديد.
+  // استعادة الجلسة قبل تشغيل الخدمات التي تعتمد على المستخدم والصلاحيات.
   final userProvider = UserProvider();
   await userProvider.restoreSession();
 
-  // ✅ مزامنة أولية عند بدء التطبيق (إذا كان متصلًا ومستخدمًا مسجّلًا).
-  // startAutoSync() يستمع فقط لتغيّر الاتصال، فإن فتحت التطبيق وأنت
-  // متصل أصلًا لن يُطلق الحدث. لذلك نُشغّل syncAll() يدويًا هنا.
-  // الأخطاء تُتجاهل — التطبيق يجب أن يعمل حتى بدون إنترنت.
-  unawaited(SyncService().syncAll());
+  // بدء المزامنة بعد جاهزية Firebase وقاعدة البيانات والجلسة.
+  SyncService().startAutoSync();
 
+  // تشغيل واجهة التطبيق دون انتظار النسخ الاحتياطي أو المزامنة الأولية.
   runApp(
     ChangeNotifierProvider<UserProvider>.value(
       value: userProvider,
       child: const MyApp(),
     ),
   );
+
+  // النسخ التلقائي والمزامنة الأولية يعملان في الخلفية.
+  unawaited(_runAutomaticBackup());
+  unawaited(SyncService().syncAll());
 }
 
 Future<void> _runAutomaticBackup() async {

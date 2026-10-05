@@ -1289,11 +1289,25 @@ class _UsersScreenState extends State<UsersScreen> {
     );
 
     if (confirmed != true) return;
-    final password = await _askBackupPassword(title: 'كلمة مرور النسخة', confirm: false);
-    if (password == null) return;
 
     try {
-      final restored = await _backupService.restoreBackup(password: password);
+      final backup = await _backupService.pickBackupFile();
+      if (backup == null) return;
+
+      String? password;
+
+      if (backup.type == BackupFileType.manual) {
+        password = await _askBackupPassword(
+          title: 'كلمة مرور النسخة',
+          confirm: false,
+        );
+        if (password == null) return;
+      }
+
+      final restored = await _backupService.restoreBackup(
+        backup: backup,
+        password: password,
+      );
 
       if (!mounted) return;
 

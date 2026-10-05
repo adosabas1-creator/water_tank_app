@@ -49,19 +49,17 @@ service cloud.firestore {
     // ============================================================
     // login_directory
     //
-    // مطلوب قبل تسجيل الدخول من جهاز جديد، لذلك يسمح GET فقط.
-    // LIST ممنوع حتى لا يمكن سرد أسماء المستخدمين.
+    // دليل ربط اسم المستخدم بحساب Firebase.
+    // لا يُستخدم للقراءة أثناء تسجيل الدخول من جهاز جديد.
+    // GET وLIST مغلقان لمنع كشف بيانات ربط الحسابات.
     //
     // الكتابة:
     // - المدير يستطيع الإدارة.
     // - المستخدم يستطيع تحديث سجله فقط، وبنفس Firebase UID/email.
     // ============================================================
     match /businesses/alborai_water_tank/login_directory/{username} {
-      // مغلق للعامة. القراءة بعد المصادقة فقط.
-      allow get: if signedIn() && (
-        isAdmin() ||
-        resource.data.get('firebase_uid', '') == request.auth.uid
-      );
+      // القراءة مغلقة بالكامل.
+      allow get: if false;
       allow list: if false;
 
       allow create: if isAdmin() ||
@@ -240,7 +238,7 @@ service cloud.firestore {
 
     // ❌ رفض كل شيء آخر
     match /businesses/alborai_water_tank/operation_logs/{document} {
-      allow read: if signedIn();
+      allow read: if hasPermission('logs_view');
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }

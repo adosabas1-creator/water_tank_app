@@ -1796,6 +1796,17 @@ class DatabaseHelper {
         ON login_attempts(username, attempted_at)
       ''');
     }
+
+    // الإصدار 39: تحرير أسماء المستخدمين المحذوفين.
+    // users.username عليه UNIQUE عالمي، لذلك نحتفظ بالصف المحذوف
+    // ونستبدل اسمه باسم Tombstone فريد مبني على sync_id.
+    if (oldVersion < 39) {
+      await db.execute('''
+        UPDATE users
+        SET username = '__deleted__' || sync_id
+        WHERE is_deleted = 1
+          AND substr(username, 1, 11) != '__deleted__'
+      ''');
+    }
   }
 }
-

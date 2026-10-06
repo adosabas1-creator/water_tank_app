@@ -998,10 +998,13 @@ class AuthService {
     if (rows.isEmpty) return false;
 
     final user = User.fromMap(rows.first);
+    final originalUsername = user.username.trim();
+    final tombstoneUsername = '__deleted__${user.syncId}';
 
     final count = await db.update(
       'users',
       {
+        'username': tombstoneUsername,
         'is_deleted': 1,
         'is_synced': 0,
         'updated_at': DateTime.now().toIso8601String(),
@@ -1032,8 +1035,8 @@ class AuthService {
       }
 
       // إزالة اسم المستخدم من دليل تسجيل الدخول.
-      if (user.username.trim().isNotEmpty) {
-        await _deleteLoginDirectoryByUsername(user.username);
+      if (originalUsername.isNotEmpty) {
+        await _deleteLoginDirectoryByUsername(originalUsername);
       }
     }
 
@@ -1243,21 +1246,36 @@ class AuthService {
     if (rows.isEmpty) return 0;
 
     final now = DateTime.now().toIso8601String();
-
-    final count = await db.update(
-      'users',
-      {
-        'is_deleted': 1,
-        'is_synced': 0,
-        'updated_at': now,
-      },
-      where: "username IN ($placeholders) AND is_deleted = 0",
-      whereArgs: usernames,
-    );
+    var count = 0;
 
     for (final row in rows) {
+      final originalUsername = row['username']?.toString().trim() ?? '';
+      final syncId = row['sync_id']?.toString().trim() ?? '';
+
+      if (syncId.isEmpty) {
+        throw StateError('لا يمكن حذف مستخدم بدون sync_id');
+      }
+
+      final tombstoneUsername = '__deleted__$syncId';
+
+      final updated = await db.update(
+        'users',
+        {
+          'username': tombstoneUsername,
+          'is_deleted': 1,
+          'is_synced': 0,
+          'updated_at': now,
+        },
+        where: 'id = ? AND is_deleted = 0',
+        whereArgs: [row['id']],
+      );
+
+      if (updated == 0) continue;
+      count += updated;
+
       final user = User.fromMap({
         ...row,
+        'username': tombstoneUsername,
         'is_deleted': 1,
         'updated_at': now,
         'is_synced': 0,
@@ -1265,6 +1283,10 @@ class AuthService {
 
       if (user.firebaseUid != null && user.firebaseUid!.isNotEmpty) {
         await _publishUserDirectory(user, isDeleted: true);
+      }
+
+      if (originalUsername.isNotEmpty) {
+        await _deleteLoginDirectoryByUsername(originalUsername);
       }
     }
 

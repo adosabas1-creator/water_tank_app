@@ -443,7 +443,7 @@ class DatabaseHelper {
   /// يعمل بغض النظر عن إصدار قاعدة البيانات الحالي.
   Future<void> _ensureCoreTables(Database db) async {
     final rows = await db.rawQuery(
-      "SELECT name FROM sqlite_master WHERE type=\"table\"",
+      "SELECT name FROM sqlite_master WHERE type='table'",
     );
     final existing =
         rows.map((row) => row["name"]?.toString()).whereType<String>().toSet();

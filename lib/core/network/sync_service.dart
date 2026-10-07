@@ -58,7 +58,7 @@ class SyncService {
 
     assert(_connectivitySubscription != null);
     assert(_periodicSyncTimer != null);
-    debugPrint('Automatic sync listener started (connectivity + 10s periodic)');
+    debugPrint('Automatic sync listener started (connectivity + 60s periodic)');
   }
 
   Future<void> stopAutoSync() async {

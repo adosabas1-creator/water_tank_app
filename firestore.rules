@@ -237,7 +237,8 @@ service cloud.firestore {
     match /businesses/alborai_water_tank/operation_logs/{document} {
       allow read: if hasPermission('logs_view');
       allow create: if
-        hasPermission('logs_view') &&
+        userExists() &&
+        request.resource.data.get('user_sync_id', '') != '' &&
         request.resource.data.get('user_sync_id', '') ==
           userDoc().data.get('sync_id', '');
       allow update, delete: if isAdmin();

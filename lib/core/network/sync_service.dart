@@ -985,7 +985,9 @@ class SyncService {
         return isManagement;
 
       case 'operation_logs':
-        return _hasPermission(PermissionKeys.logsView);
+        // كل مستخدم مسجل يمكنه رفع سجل التدقيق الخاص به.
+        // Firestore Rules تتحقق من أن user_sync_id يخص المستخدم الحالي.
+        return _currentUser != null;
 
       default:
         return false;

@@ -64,19 +64,19 @@ jobs:
 
           echo "$RESPONSE"
 
-          UID=$(echo "$RESPONSE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["localId"])')
+          TEST_UID=$(echo "$RESPONSE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["localId"])')
 
-          echo "uid=$UID" >> "$GITHUB_OUTPUT"
+          echo "uid=$TEST_UID" >> "$GITHUB_OUTPUT"
 
       - name: Seed emulator user directory
         env:
-          UID: ${{ steps.emulator-user.outputs.uid }}
+          TEST_UID: ${{ steps.emulator-user.outputs.uid }}
         run: |
           cat > /tmp/user-directory.json <<EOF
           {
             "fields": {
               "sync_id": {"stringValue": "sync-test-user"},
-              "firebase_uid": {"stringValue": "$UID"},
+              "firebase_uid": {"stringValue": "$TEST_UID"},
               "firebase_email": {"stringValue": "sync-test@example.com"},
               "username": {"stringValue": "sync_test_admin"},
               "full_name": {"stringValue": "Sync Test Admin"},
@@ -100,7 +100,7 @@ jobs:
             -H 'Authorization: Bearer owner' \
             -H 'Content-Type: application/json' \
             --data-binary @/tmp/user-directory.json \
-            "http://127.0.0.1:8080/v1/projects/alborai-water-tank/databases/(default)/documents/businesses/alborai_water_tank/user_directory/$UID"
+            "http://127.0.0.1:8080/v1/projects/alborai-water-tank/databases/(default)/documents/businesses/alborai_water_tank/user_directory/$TEST_UID"
 
       - name: Start Android Emulator
         uses: reactivecircus/android-emulator-runner@v2

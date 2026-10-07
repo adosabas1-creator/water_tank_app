@@ -1,91 +1,48 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-
-DateTime? parseTime(dynamic v) {
-  if (v == null) return null;
-  if (v is DateTime) return v;
-  return DateTime.tryParse(v.toString());
-}
-
-bool remoteIsNewer(Map local, Map remote) {
-  final r = parseTime(remote['local_updated_at']) ??
-      parseTime(remote['updated_at']);
-  final l = parseTime(local['updated_at']) ??
-      parseTime(local['local_updated_at']);
-  if (r == null || l == null) return false;
-  return r.isAfter(l);
-}
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 void main() {
-  setUpAll(() {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  });
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('LWW: remote أحدث يفوز', () {
-    expect(
-      remoteIsNewer(
-        {'updated_at': '2026-01-01T10:00:00.000'},
-        {'local_updated_at': '2026-01-01T11:00:00.000'},
-      ),
-      isTrue,
-    );
-  });
-
-  test('LWW: local أحدث لا يُستبدل', () {
-    expect(
-      remoteIsNewer(
-        {'updated_at': '2026-01-01T12:00:00.000'},
-        {'local_updated_at': '2026-01-01T11:00:00.000'},
-      ),
-      isFalse,
-    );
-  });
-
-  test('رفع is_synced=0 ثم تعليمه متزامناً', () async {
-    final db = await databaseFactory.openDatabase(
-      inMemoryDatabasePath,
-      options: OpenDatabaseOptions(
-        version: 1,
-        onCreate: (db, _) async {
-          await db.execute(
-            'CREATE TABLE clients (id INTEGER PRIMARY KEY, sync_id TEXT, name TEXT, updated_at TEXT, is_synced INTEGER DEFAULT 0)',
-          );
-        },
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: 'test-api-key',
+        appId: '1:40842409498:android:64640f7b962865508083a3',
+        messagingSenderId: '40842409498',
+        projectId: 'alborai-water-tank',
       ),
     );
 
-    final id = await db.insert('clients', {
-      'sync_id': 'c1',
-      'name': 'عميل',
-      'updated_at': '2026-01-01T10:00:00.000',
-      'is_synced': 0,
+    await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
+    FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
+  });
+
+  test('Firebase Emulator: Auth + Firestore يعملان', () async {
+    final credential = await FirebaseAuth.instance
+        .createUserWithEmailAndPassword(
+      email: 'sync-test@example.com',
+      password: 'test123456',
+    );
+
+    expect(credential.user, isNotNull);
+
+    await FirebaseFirestore.instance
+        .collection('emulator_test')
+        .doc('sync_test')
+        .set({
+      'message': 'ok',
+      'uid': credential.user!.uid,
     });
 
-    expect(
-      (await db.query('clients', where: 'is_synced = 0')).length,
-      1,
-    );
+    final snapshot = await FirebaseFirestore.instance
+        .collection('emulator_test')
+        .doc('sync_test')
+        .get();
 
-    await db.update(
-      'clients',
-      {'is_synced': 1},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-
-    expect(
-      await db.query('clients', where: 'is_synced = 0'),
-      isEmpty,
-    );
-    await db.close();
-  });
-
-  test('بدون إنترنت: السجل يبقى is_synced=0', () {
-    const isOnline = false;
-    final record = {'is_synced': 0};
-    if (!isOnline) {
-      expect(record['is_synced'], 0);
-    }
+    expect(snapshot.exists, isTrue);
+    expect(snapshot.data()?['message'], 'ok');
   });
 }

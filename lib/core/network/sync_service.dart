@@ -1122,14 +1122,14 @@ class SyncService {
       debugPrint('Critical sync wait completed');
     }
 
-    if (!await _ready()) {
-      _criticalSyncRequested = false;
-      debugPrint('Critical sync: NOT READY');
-      return;
-    }
-
+    // Acquire the lock before any further await so concurrent critical
+    // sync requests cannot both pass the in-progress check.
     _syncInProgress = true;
+
     try {
+      if (!await _ready()) {
+        return;
+      }
       const tables = [
       'sales',
       'sale_inventory_allocations',
@@ -1301,14 +1301,16 @@ class SyncService {
     }
 
 
-    if (!await _ready()) {
-      return;
-    }
-
+    // Acquire the lock before any await so concurrent syncAll() calls
+    // cannot both pass the in-progress check.
     _syncInProgress = true;
-      await _refreshCurrentUserPermissions();
 
     try {
+      if (!await _ready()) {
+        return;
+      }
+
+      await _refreshCurrentUserPermissions();
       final db = await _dbHelper.database;
 
       try {

@@ -10,8 +10,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -19,14 +26,49 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos
 
+      - name: Start Firebase Emulators
+        run: |
+          firebase emulators:start --only auth,firestore > firebase-emulator.log 2>&1 &
+          echo $! > firebase-emulator.pid
+
+          for i in {1..60}; do
+            if curl -sf http://127.0.0.1:4000/ > /dev/null; then
+              echo "Firebase Emulators are ready"
+              break
+            fi
+
+            if [ "$i" -eq 60 ]; then
+              echo "Firebase Emulators failed to start"
+              cat firebase-emulator.log
+              exit 1
+            fi
+
+            sleep 2
+          done
+
       - name: Run tests
         run: flutter test --coverage
+
+      - name: Stop Firebase Emulators
+        if: always()
+        run: |
+          if [ -f firebase-emulator.pid ]; then
+            kill "$(cat firebase-emulator.pid)" || true
+          fi
 
       - name: Upload coverage
         if: always()
@@ -34,4 +76,12 @@ jobs:
         with:
           name: coverage
           path: coverage/lcov.info
+          if-no-files-found: ignore
+
+      - name: Upload Firebase Emulator log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firebase-emulator-log
+          path: firebase-emulator.log
           if-no-files-found: ignore

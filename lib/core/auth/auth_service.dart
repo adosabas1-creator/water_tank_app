@@ -32,26 +32,6 @@ class AuthService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const String _businessId = 'alborai_water_tank';
 
-  // ✅ البريد المركزي لـ aliases (كل الرسائل تصل إليه)
-  static const String _masterEmailPrefix = 'adosabas1';
-  static const String _masterEmailDomain = 'gmail.com';
-
-  /// يولّد بريدًا بديلًا (alias) لـ Gmail المركزي
-  /// مثال: "ahmed" → adosabas1+ahmed@gmail.com
-  /// كل الرسائل على هذه العناوين تصل إلى adosabas1@gmail.com
-  String _generateAliasEmail(String username) {
-    // تنظيف اسم المستخدم ليصلح كـ alias (a-z, 0-9, _)
-    final safe = username
-        .trim()
-        .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
-        .replaceAll(RegExp(r'_+'), '_')
-        .toLowerCase();
-
-    final finalName =
-        safe.isEmpty ? 'user_${DateTime.now().millisecondsSinceEpoch}' : safe;
-
-    return '$_masterEmailPrefix+$finalName@$_masterEmailDomain';
-  }
   Future<firebase_auth.FirebaseAuth> _secondaryAuth() async {
     const appName = 'water_tank_secondary_auth';
 
@@ -779,7 +759,7 @@ class AuthService {
   Future<int> createUser({
     required String username,
     required String password,
-    String? firebaseEmail,
+    required String firebaseEmail,
     required String fullName,
     required String role,
     int? driverId,
@@ -788,7 +768,6 @@ class AuthService {
     PermissionService.requirePermission(PermissionKeys.usersManage);
     final cleanUsername = username.trim();
     final cleanFullName = fullName.trim();
-    final providedEmail = firebaseEmail?.trim();
 
     if (cleanUsername.isEmpty) throw ArgumentError('اسم المستخدم مطلوب');
     if (cleanFullName.isEmpty) throw ArgumentError('الاسم الكامل مطلوب');
@@ -799,10 +778,7 @@ class AuthService {
       throw ArgumentError('الدور غير صالح');
     }
 
-    // ✅ إذا لم يُدخل بريد، نولّد alias على Gmail المركزي
-    final cleanEmail = (providedEmail == null || providedEmail.isEmpty)
-        ? _generateAliasEmail(cleanUsername)
-        : providedEmail;
+    final cleanEmail = firebaseEmail.trim();
 
     final emailRegex = RegExp(
       r'^[^\s@]+@[^\s@]+\.[^\s@]+$',

@@ -1091,7 +1091,6 @@ class _UsersScreenState extends State<UsersScreen> {
 
   /// يرسل رابط إعادة تعيين كلمة المرور لبريد المستخدم.
   /// يعمل فقط مع بريد حقيقي (Gmail / Outlook / إلخ).
-  /// البريد المولَّد كـ alias (adosabas1+user@gmail.com) يصل للمدير المركزي.
   Future<void> _sendPasswordReset(User user) async {
     final email = user.firebaseEmail?.trim() ?? '';
 
@@ -1105,8 +1104,6 @@ class _UsersScreenState extends State<UsersScreen> {
       return;
     }
 
-    // ⚠️ تحذير لو البريد فيه علامة + (alias) - يصل للمدير وليس للمستخدم
-    final isAlias = email.contains('+');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1118,19 +1115,6 @@ class _UsersScreenState extends State<UsersScreen> {
           children: [
             Text('سيتم إرسال رابط إعادة تعيين إلى:\n$email'),
             const SizedBox(height: 12),
-            if (isAlias)
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: const Text(
-                  '⚠️ هذا بريد بديل (alias). الرابط سيصل إلى بريد المدير المركزي، وليس المستخدم.',
-                  style: TextStyle(fontSize: 12, color: Colors.orange),
-                ),
-              ),
             const SizedBox(height: 12),
             const Text(
               'ملاحظة: للمستخدم القديم الذي لم يغيّر كلمته بعد، يمكنه الدخول بكلمة المرور القديمة ثم تغييرها من داخل التطبيق.',

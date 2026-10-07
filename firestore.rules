@@ -25,10 +25,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return userExists() &&
-        (
-          userDoc().data.role == 'admin' ||
-          userDoc().data.role == 'deputy_manager'
-        );
+        userDoc().data.role == 'admin';
     }
 
     function isManagement() {
@@ -239,7 +236,10 @@ service cloud.firestore {
     // ❌ رفض كل شيء آخر
     match /businesses/alborai_water_tank/operation_logs/{document} {
       allow read: if hasPermission('logs_view');
-      allow create: if signedIn();
+      allow create: if
+        hasPermission('logs_view') &&
+        request.resource.data.get('user_sync_id', '') ==
+          userDoc().data.get('sync_id', '');
       allow update, delete: if isAdmin();
     }
 

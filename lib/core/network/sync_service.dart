@@ -50,7 +50,7 @@ class SyncService {
     });
 
     _periodicSyncTimer = Timer.periodic(
-      const Duration(seconds: 10),
+      const Duration(seconds: 60),
       (_) {
         syncAll();
       },

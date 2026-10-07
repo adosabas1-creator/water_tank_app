@@ -1,160 +1,209 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:uuid/uuid.dart';
 
-Future<double> allocateFifo(Database db, int units, int supplierId) async {
-  final layers = await db.rawQuery('''
-    SELECT l.id, l.remaining_units, l.unit_cost
-    FROM inventory_layers l
-    JOIN purchase_items pi ON pi.id = l.purchase_item_id AND pi.is_deleted = 0
-    JOIN purchase_invoices inv ON inv.id = pi.purchase_invoice_id AND inv.is_deleted = 0
-    WHERE l.item_type = 'tank' AND l.is_deleted = 0 AND l.remaining_units > 0
-      AND inv.supplier_id = ?
-    ORDER BY l.layer_date ASC, l.id ASC
-  ''', [supplierId]);
-
-  final available = layers.fold<int>(
-    0,
-    (s, r) => s + (r['remaining_units'] as num).toInt(),
-  );
-  if (available < units) {
-    throw Exception('لا توجد كمية كافية في المخزون.');
-  }
-
-  var left = units;
-  var cost = 0.0;
-  for (final layer in layers) {
-    if (left <= 0) break;
-    final rem = (layer['remaining_units'] as num).toInt();
-    final take = rem < left ? rem : left;
-    cost += take * (layer['unit_cost'] as num).toDouble();
-    await db.update(
-      'inventory_layers',
-      {'remaining_units': rem - take, 'is_synced': 0},
-      where: 'id = ?',
-      whereArgs: [layer['id']],
-    );
-    left -= take;
-  }
-  return cost;
-}
-
-Future<Database> openDb() async {
-  return databaseFactory.openDatabase(
-    inMemoryDatabasePath,
-    options: OpenDatabaseOptions(
-      version: 1,
-      onCreate: (db, _) async {
-        await db.execute(
-          'CREATE TABLE purchase_invoices (id INTEGER PRIMARY KEY, supplier_id INTEGER, is_deleted INTEGER DEFAULT 0)',
-        );
-        await db.execute(
-          'CREATE TABLE purchase_items (id INTEGER PRIMARY KEY, purchase_invoice_id INTEGER, is_deleted INTEGER DEFAULT 0)',
-        );
-        await db.execute(
-          'CREATE TABLE inventory_layers (id INTEGER PRIMARY KEY, purchase_item_id INTEGER, item_type TEXT, remaining_units INTEGER, unit_cost REAL, layer_date TEXT, is_deleted INTEGER DEFAULT 0, is_synced INTEGER DEFAULT 0)',
-        );
-        await db.execute(
-          'CREATE TABLE sales (id INTEGER PRIMARY KEY, sync_id TEXT UNIQUE, supplier_id INTEGER, units INTEGER, total_amount REAL, cost_amount REAL, profit_amount REAL, is_synced INTEGER DEFAULT 0)',
-        );
-      },
-    ),
-  );
-}
+import 'package:water_tank_app/core/auth/permission_service.dart';
+import 'package:water_tank_app/core/database/database_helper.dart';
+import 'package:water_tank_app/models/sale.dart';
+import 'package:water_tank_app/models/user.dart';
+import 'package:water_tank_app/services/sale_service.dart';
 
 void main() {
-  setUpAll(() {
+  late Directory testDirectory;
+  late DatabaseHelper dbHelper;
+
+  setUpAll(() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-  });
 
-  test('FIFO داخل transaction يحسب التكلفة من الأقدم', () async {
-    final db = await openDb();
-    await db.transaction((txn) async {
-      final inv = await txn.insert('purchase_invoices', {
-        'supplier_id': 1,
-        'is_deleted': 0,
-      });
-      final item = await txn.insert('purchase_items', {
-        'purchase_invoice_id': inv,
-        'is_deleted': 0,
-      });
-      await txn.insert('inventory_layers', {
-        'purchase_item_id': item,
-        'item_type': 'tank',
-        'remaining_units': 5,
-        'unit_cost': 10,
-        'layer_date': '2026-01-01',
-        'is_deleted': 0,
-        'is_synced': 1,
-      });
-      await txn.insert('inventory_layers', {
-        'purchase_item_id': item,
-        'item_type': 'tank',
-        'remaining_units': 10,
-        'unit_cost': 20,
-        'layer_date': '2026-02-01',
-        'is_deleted': 0,
-        'is_synced': 1,
-      });
-    });
-
-    final cost = await allocateFifo(db, 7, 1);
-    expect(cost, 90);
-
-    final layers = await db.query('inventory_layers', orderBy: 'id');
-    expect(layers[0]['remaining_units'], 0);
-    expect(layers[1]['remaining_units'], 8);
-    await db.close();
-  });
-
-  test('إضافة مبيعة is_synced=0 ثم الاسترجاع', () async {
-    final db = await openDb();
-    final syncId = const Uuid().v4();
-
-    await db.transaction((txn) async {
-      await txn.insert('sales', {
-        'sync_id': syncId,
-        'supplier_id': 1,
-        'units': 3,
-        'total_amount': 150,
-        'cost_amount': 30,
-        'profit_amount': 120,
-        'is_synced': 0,
-      });
-    });
-
-    final rows = await db.query(
-      'sales',
-      where: 'sync_id = ?',
-      whereArgs: [syncId],
+    testDirectory = await Directory.systemTemp.createTemp(
+      'water_tank_sale_service_test_',
     );
-    expect(rows.length, 1);
-    expect(rows.first['is_synced'], 0);
-    expect(rows.first['profit_amount'], 120);
-    await db.close();
+    await databaseFactory.setDatabasesPath(testDirectory.path);
   });
 
-  test('FIFO يرفض عند نقص المخزون', () async {
-    final db = await openDb();
-    final inv = await db.insert('purchase_invoices', {
-      'supplier_id': 1,
+  setUp(() async {
+    dbHelper = DatabaseHelper();
+    await dbHelper.closeDatabase();
+
+    final now = DateTime.now().toIso8601String();
+
+    PermissionService.setCurrentUser(
+      User(
+        id: 1,
+        syncId: 'test-admin-sync-id',
+        username: 'test_admin',
+        passwordHash: 'test',
+        passwordHashVersion: 2,
+        fullName: 'Test Admin',
+        role: 'admin',
+        permissions: const {},
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+  });
+
+  tearDown(() async {
+    await dbHelper.closeDatabase();
+    PermissionService.setCurrentUser(null);
+  });
+
+  tearDownAll(() async {
+    if (testDirectory.existsSync()) {
+      await testDirectory.delete(recursive: true);
+    }
+  });
+
+  test('SaleService.addSale يستخدم FIFO الحقيقي ويحفظ المبيعة والتخصيصات',
+      () async {
+    final db = await dbHelper.database;
+
+    await db.insert('users', {
+      'id': 1,
+      'username': 'test_admin',
+      'password_hash': 'test',
+      'password_hash_version': 2,
+      'full_name': 'Test Admin',
+      'role': 'admin',
+      'permissions': '{}',
+      'created_at': '2026-01-01T00:00:00.000',
+      'updated_at': '2026-01-01T00:00:00.000',
       'is_deleted': 0,
+      'is_synced': 1,
+      'sync_id': 'test-admin-sync-id',
     });
-    final item = await db.insert('purchase_items', {
-      'purchase_invoice_id': inv,
-      'is_deleted': 0,
-    });
-    await db.insert('inventory_layers', {
-      'purchase_item_id': item,
-      'item_type': 'tank',
-      'remaining_units': 2,
-      'unit_cost': 10,
-      'layer_date': '2026-01-01',
+
+    final supplierId = await db.insert('suppliers', {
+      'sync_id': 'supplier-test-1',
+      'supplier_number': 'SUP-TEST-1',
+      'name': 'مورد اختبار',
+      'status': 'active',
+      'created_at': '2026-01-01T00:00:00.000',
+      'updated_at': '2026-01-01T00:00:00.000',
       'is_deleted': 0,
       'is_synced': 1,
     });
-    expect(() => allocateFifo(db, 5, 1), throwsException);
-    await db.close();
+
+    final invoiceId = await db.insert('purchase_invoices', {
+      'invoice_number': 'PINV-TEST-1',
+      'supplier_id': supplierId,
+      'purchase_date': '2026-01-01T00:00:00.000',
+      'total_amount': 250.0,
+      'payment_status': 'paid',
+      'created_by': 1,
+      'created_at': '2026-01-01T00:00:00.000',
+      'updated_at': '2026-01-01T00:00:00.000',
+      'is_deleted': 0,
+      'is_synced': 1,
+      'sync_id': 'purchase-invoice-test-1',
+    });
+
+    final purchaseItemId = await db.insert('purchase_items', {
+      'purchase_invoice_id': invoiceId,
+      'item_type': 'tank',
+      'units': 15,
+      'purchase_price': 10.0,
+      'total_amount': 150.0,
+      'created_at': '2026-01-01T00:00:00.000',
+      'updated_at': '2026-01-01T00:00:00.000',
+      'is_deleted': 0,
+      'is_synced': 1,
+      'sync_id': 'purchase-item-test-1',
+    });
+
+    await db.insert('inventory_layers', {
+      'purchase_item_id': purchaseItemId,
+      'item_type': 'tank',
+      'original_units': 5,
+      'remaining_units': 5,
+      'unit_cost': 10.0,
+      'layer_date': '2026-01-01T00:00:00.000',
+      'created_at': '2026-01-01T00:00:00.000',
+      'updated_at': '2026-01-01T00:00:00.000',
+      'is_deleted': 0,
+      'is_synced': 1,
+      'sync_id': 'inventory-layer-test-1',
+    });
+
+    await db.insert('inventory_layers', {
+      'purchase_item_id': purchaseItemId,
+      'item_type': 'tank',
+      'original_units': 10,
+      'remaining_units': 10,
+      'unit_cost': 20.0,
+      'layer_date': '2026-02-01T00:00:00.000',
+      'created_at': '2026-02-01T00:00:00.000',
+      'updated_at': '2026-02-01T00:00:00.000',
+      'is_deleted': 0,
+      'is_synced': 1,
+      'sync_id': 'inventory-layer-test-2',
+    });
+
+    final sale = Sale(
+      syncId: const Uuid().v4(),
+      saleNumber: 'SALE-TEST-1',
+      supplierId: supplierId,
+      units: 7,
+      salePrice: 25.0,
+      totalAmount: 175.0,
+      costAmount: 0,
+      profitAmount: 0,
+      saleDate: '2026-03-01T00:00:00.000',
+      paymentStatus: 'paid',
+      clientPaymentStatus: 'paid',
+      createdByName: 'Test Admin',
+      createdBy: 1,
+      createdAt: '2026-03-01T00:00:00.000',
+      updatedAt: '2026-03-01T00:00:00.000',
+    );
+
+    final result = await SaleService().addSale(sale);
+
+    expect(result.id, isNotNull);
+    expect(result.units, 7);
+    expect(result.totalAmount, 175.0);
+    expect(result.costAmount, 90.0);
+    expect(result.profitAmount, 85.0);
+    expect(result.isSynced, isFalse);
+
+    final sales = await db.query(
+      'sales',
+      where: 'id = ?',
+      whereArgs: [result.id],
+    );
+
+    expect(sales, hasLength(1));
+    expect(sales.first['cost_amount'], 90.0);
+    expect(sales.first['profit_amount'], 85.0);
+    expect(sales.first['is_synced'], 0);
+
+    final allocations = await db.query(
+      'sale_inventory_allocations',
+      where: 'sale_id = ?',
+      whereArgs: [result.id],
+      orderBy: 'id ASC',
+    );
+
+    expect(allocations, hasLength(2));
+    expect(allocations[0]['units'], 5);
+    expect(allocations[0]['unit_cost'], 10.0);
+    expect(allocations[0]['cost_amount'], 50.0);
+    expect(allocations[1]['units'], 2);
+    expect(allocations[1]['unit_cost'], 20.0);
+    expect(allocations[1]['cost_amount'], 40.0);
+
+    final layers = await db.query(
+      'inventory_layers',
+      orderBy: 'layer_date ASC, id ASC',
+    );
+
+    expect(layers, hasLength(2));
+    expect(layers[0]['remaining_units'], 0);
+    expect(layers[0]['is_synced'], 0);
+    expect(layers[1]['remaining_units'], 8);
+    expect(layers[1]['is_synced'], 0);
   });
 }

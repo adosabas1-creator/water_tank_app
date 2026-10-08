@@ -113,7 +113,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: |
-            flutter test integration_test/sync_service_test.dart \
+            flutter test integration_test \
               -d emulator-5554 \
               --dart-define=SYNC_TEST_UID=${{ steps.emulator-user.outputs.uid }} \
               --dart-define=FIREBASE_EMULATOR_HOST=10.0.2.2

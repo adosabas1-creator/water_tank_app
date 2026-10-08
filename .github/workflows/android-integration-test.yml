@@ -111,6 +111,7 @@ jobs:
           profile: pixel_2
           emulator-options: -no-window -no-audio -no-boot-anim
           disable-animations: true
+          emulator-boot-timeout: 180
           script: |
             flutter test integration_test/sync_service_test.dart \
               -d emulator-5554 \

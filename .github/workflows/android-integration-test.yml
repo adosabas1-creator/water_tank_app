@@ -121,6 +121,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: |
+            unset CI
             flutter drive --driver=test_driver/integration_test.dart --target=integration_test/sync_service_test.dart \
               -d emulator-5554 \
               --dart-define=SYNC_TEST_UID=${{ steps.emulator-user.outputs.uid }} \

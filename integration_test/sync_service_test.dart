@@ -111,6 +111,15 @@ void main() {
     PermissionService.setCurrentUser(currentUser);
 
     const clientSyncId = 'sync-test-client-001';
+    final remoteRef = FirebaseFirestore.instance
+        .collection('businesses')
+        .doc(SyncService.businessId)
+        .collection('clients')
+        .doc(clientSyncId);
+    final previousRemote = await remoteRef.get();
+    if (previousRemote.exists) {
+      await remoteRef.delete();
+    }
 
     await db.delete(
       'clients',

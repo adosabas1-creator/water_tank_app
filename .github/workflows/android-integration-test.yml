@@ -25,7 +25,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: "3.44.9"
           cache: true
 
       - name: Install Firebase CLI
@@ -36,17 +36,18 @@ jobs:
 
       - name: Start Firebase Emulators
         run: |
-          firebase emulators:start --only auth,firestore > firebase-emulator.log 2>&1 &
+          firebase emulators:start --project alborai-water-tank --only auth,firestore > firebase-emulator.log 2>&1 &
           echo $! > firebase-emulator.pid
 
-          for i in {1..60}; do
-            if curl -sf http://127.0.0.1:4000/ > /dev/null; then
-              echo "Firebase Emulators are ready"
+          for i in {1..90}; do
+            if curl -sS --max-time 2 -o /dev/null http://127.0.0.1:9099/ &&
+               curl -sS --max-time 2 -o /dev/null http://127.0.0.1:8080/; then
+              echo "Firebase Auth and Firestore emulators are reachable"
               break
             fi
 
-            if [ "$i" -eq 60 ]; then
-              echo "Firebase Emulators failed to start"
+            if [ "$i" -eq 90 ]; then
+              echo "Firebase Auth or Firestore emulator failed to start"
               cat firebase-emulator.log
               exit 1
             fi
@@ -57,14 +58,21 @@ jobs:
       - name: Create emulator test user
         id: emulator-user
         run: |
-          RESPONSE=$(curl -sS -X POST \
+          RESPONSE=$(curl --fail-with-body -sS -X POST \
             -H 'Content-Type: application/json' \
             -d '{"email":"sync-test@example.com","password":"test123456","returnSecureToken":true}' \
             'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key')
 
           echo "$RESPONSE"
 
-          TEST_UID=$(echo "$RESPONSE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["localId"])')
+          TEST_UID=$(echo "$RESPONSE" | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          uid = data.get("localId")
+          if not isinstance(uid, str) or not uid.strip():
+              raise SystemExit("Firebase Auth response has no valid localId")
+          print(uid)
+          ')
 
           echo "uid=$TEST_UID" >> "$GITHUB_OUTPUT"
 
@@ -96,7 +104,7 @@ jobs:
           }
           EOF
 
-          curl -sS -X PATCH \
+          curl --fail-with-body -sS -X PATCH \
             -H 'Authorization: Bearer owner' \
             -H 'Content-Type: application/json' \
             --data-binary @/tmp/user-directory.json \
@@ -105,7 +113,7 @@ jobs:
       - name: Start Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 36
           target: google_apis
           arch: x86_64
           profile: pixel_2
@@ -113,7 +121,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: |
-            flutter test integration_test/sync_service_test.dart \
+            flutter drive --driver=test_driver/integration_test.dart --target=integration_test/sync_service_test.dart \
               -d emulator-5554 \
               --dart-define=SYNC_TEST_UID=${{ steps.emulator-user.outputs.uid }} \
               --dart-define=FIREBASE_EMULATOR_HOST=10.0.2.2

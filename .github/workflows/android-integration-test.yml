@@ -161,18 +161,16 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          force-avd-creation: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -accel on
           disable-animations: true
           emulator-boot-timeout: 1200
           script: |
-            set -eux
             adb wait-for-device
-            flutter devices
+            adb reverse tcp:9099 tcp:9099
+            adb reverse tcp:8080 tcp:8080
             unset CI
-            flutter drive --driver=test_driver/integration_test.dart --target=integration_test/sync_service_test.dart \
-              -d emulator-5554 \
-              --dart-define=SYNC_TEST_UID=${{ steps.emulator-user.outputs.uid }} \
-              --dart-define=FIREBASE_EMULATOR_HOST=10.0.2.2
+            flutter drive --driver=test_driver/integration_test.dart --target=integration_test/sync_service_test.dart -d emulator-5554 --dart-define=SYNC_TEST_UID=${{ steps.emulator-user.outputs.uid }} --dart-define=FIREBASE_EMULATOR_HOST=10.0.2.2
 
       - name: Stop Firebase Emulators
         if: always()

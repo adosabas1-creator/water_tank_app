@@ -79,6 +79,7 @@ jobs:
 
       - name: Start Firebase Emulators
         run: |
+          sed -i 's/"host": "127.0.0.1"/"host": "0.0.0.0"/g' firebase.json
           firebase emulators:start --project alborai-water-tank --only auth,firestore > firebase-emulator.log 2>&1 &
           echo $! > firebase-emulator.pid
 
@@ -156,14 +157,17 @@ jobs:
       - name: Start Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           disable-animations: true
-          emulator-boot-timeout: 900
+          emulator-boot-timeout: 1200
           script: |
+            set -eux
+            adb wait-for-device
+            flutter devices
             unset CI
             flutter drive --driver=test_driver/integration_test.dart --target=integration_test/sync_service_test.dart \
               -d emulator-5554 \

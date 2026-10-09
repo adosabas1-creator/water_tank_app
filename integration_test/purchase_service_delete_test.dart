@@ -93,7 +93,9 @@ void main() {
 
   tearDownAll(() async {
     PermissionService.setCurrentUser(null);
-    await helper.closeDatabase();
+    try {
+      await helper.closeDatabase();
+    } catch (_) {}
   });
 
   Future<int> createPurchase({String suffix = '', double paidAmount = 40}) async {

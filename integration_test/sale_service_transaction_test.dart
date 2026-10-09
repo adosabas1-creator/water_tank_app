@@ -152,7 +152,9 @@ void main() {
 
   tearDownAll(() async {
     PermissionService.setCurrentUser(null);
-    await helper.closeDatabase();
+    try {
+      await helper.closeDatabase();
+    } catch (_) {}
   });
 
   testWidgets('failed sale update rolls back inventory and old allocation changes', (tester) async {

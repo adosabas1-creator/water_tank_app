@@ -26,7 +26,9 @@ void main() {
 
   tearDownAll(() async {
     PermissionService.setCurrentUser(null);
-    await helper.closeDatabase();
+    try {
+      await helper.closeDatabase();
+    } catch (_) {}
   });
 
   User userFor(String role) {

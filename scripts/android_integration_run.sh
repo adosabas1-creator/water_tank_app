@@ -35,13 +35,16 @@ adb shell settings put global animator_duration_scale 0 || true
 sleep 5
 
 unset CI || true
+DEVICE_ID="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
+echo "DEVICE_ID=${DEVICE_ID}"
+test -n "${DEVICE_ID}"
 
 for attempt in 1 2 3; do
   echo "=== test attempt ${attempt} ==="
   adb uninstall com.alborai.water_tank_app || true
   sleep 3
   if flutter test integration_test/sync_service_test.dart \
-    -d android \
+    -d "${DEVICE_ID}" \
     --dart-define="SYNC_TEST_UID=${TEST_UID}" \
     --dart-define="FIREBASE_EMULATOR_HOST=${EMULATOR_HOST}"; then
     echo TESTS_PASSED

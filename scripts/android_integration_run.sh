@@ -43,7 +43,7 @@ for attempt in 1 2 3; do
   echo "=== test attempt ${attempt} ==="
   adb uninstall com.alborai.water_tank_app || true
   sleep 3
-  if flutter test integration_test/sync_service_test.dart \
+  if timeout 15m flutter test integration_test/sync_service_test.dart \
     -d "${DEVICE_ID}" \
     --dart-define="SYNC_TEST_UID=${TEST_UID}" \
     --dart-define="FIREBASE_EMULATOR_HOST=${EMULATOR_HOST}"; then

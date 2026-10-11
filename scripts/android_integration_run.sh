@@ -39,7 +39,7 @@ DEVICE_ID="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
 echo "DEVICE_ID=${DEVICE_ID}"
 test -n "${DEVICE_ID}"
 
-for attempt in 1 2 3; do
+for attempt in 1 2; do
   echo "=== test attempt ${attempt} ==="
   adb uninstall com.alborai.water_tank_app || true
   sleep 3

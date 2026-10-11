@@ -43,13 +43,29 @@ for attempt in 1 2; do
   echo "=== test attempt ${attempt} ==="
   adb uninstall com.alborai.water_tank_app || true
   sleep 3
-  if timeout 15m flutter test integration_test/sync_service_test.dart \
+  TEST_LOG="integration-test-attempt-${attempt}.log"
+  set +e
+  timeout 15m flutter test integration_test/sync_service_test.dart \
     -d "${DEVICE_ID}" \
+    --reporter expanded \
+    --verbose \
     --dart-define="SYNC_TEST_UID=${TEST_UID}" \
-    --dart-define="FIREBASE_EMULATOR_HOST=${EMULATOR_HOST}"; then
+    --dart-define="FIREBASE_EMULATOR_HOST=${EMULATOR_HOST}" 2>&1 | tee "${TEST_LOG}"
+  TEST_STATUS=${PIPESTATUS[0]}
+  set -e
+
+  if [ "${TEST_STATUS}" -eq 0 ]; then
     echo TESTS_PASSED
     exit 0
   fi
+
+  LOGCAT_FILE="android-logcat-attempt-${attempt}.log"
+  adb logcat -d -v threadtime > "${LOGCAT_FILE}" || true
+  echo "Flutter test exit code: ${TEST_STATUS}"
+  echo "=== Recent Flutter test output ==="
+  tail -n 120 "${TEST_LOG}" || true
+  echo "=== Android errors from logcat ==="
+  grep -iE "FATAL EXCEPTION|AndroidRuntime|flutter.*(error|exception)|Firebase.*(error|exception)" "${LOGCAT_FILE}" | tail -n 100 || true
   echo "Attempt ${attempt} failed — recovering..."
   adb wait-for-device
   sleep 10

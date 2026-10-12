@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -26,8 +27,21 @@ void main() {
 
   setUpAll(() async {
     print('SETUP 1: Firebase.initializeApp START');
-    await Firebase.initializeApp();
-    print('SETUP 1: Firebase.initializeApp DONE');
+    try {
+      await Firebase.initializeApp().timeout(
+        const Duration(seconds: 90),
+        onTimeout: () {
+          throw TimeoutException(
+            'Firebase.initializeApp exceeded 90 seconds',
+          );
+        },
+      );
+      print('SETUP 1: Firebase.initializeApp DONE');
+    } catch (e, stackTrace) {
+      print('SETUP 1 ERROR: $e');
+      print(stackTrace);
+      rethrow;
+    }
 
     print('SETUP 2: useAuthEmulator START host=$emulatorHost');
     await FirebaseAuth.instance.useAuthEmulator(emulatorHost, 9099);

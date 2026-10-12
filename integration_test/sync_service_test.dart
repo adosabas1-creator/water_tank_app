@@ -25,40 +25,40 @@ void main() {
   late DatabaseHelper helper;
 
   setUpAll(() async {
-    debugPrint('SETUP 1: Firebase.initializeApp START');
+    print('SETUP 1: Firebase.initializeApp START');
     await Firebase.initializeApp();
-    debugPrint('SETUP 1: Firebase.initializeApp DONE');
+    print('SETUP 1: Firebase.initializeApp DONE');
 
-    debugPrint('SETUP 2: useAuthEmulator START host=$emulatorHost');
+    print('SETUP 2: useAuthEmulator START host=$emulatorHost');
     await FirebaseAuth.instance.useAuthEmulator(emulatorHost, 9099);
-    debugPrint('SETUP 2: useAuthEmulator DONE');
+    print('SETUP 2: useAuthEmulator DONE');
 
-    debugPrint('SETUP 3: useFirestoreEmulator START host=$emulatorHost');
+    print('SETUP 3: useFirestoreEmulator START host=$emulatorHost');
     FirebaseFirestore.instance.useFirestoreEmulator(emulatorHost, 8080);
-    debugPrint('SETUP 3: useFirestoreEmulator DONE');
+    print('SETUP 3: useFirestoreEmulator DONE');
 
-    debugPrint('SETUP 4: signInWithEmailAndPassword START');
+    print('SETUP 4: signInWithEmailAndPassword START');
     await FirebaseAuth.instance.signInWithEmailAndPassword(
       email: testEmail,
       password: testPassword,
     );
-    debugPrint(
+    print(
       'SETUP 4: signInWithEmailAndPassword DONE '
       'uid=${FirebaseAuth.instance.currentUser?.uid}',
     );
 
-    debugPrint('SETUP 5: verify UID START');
+    print('SETUP 5: verify UID START');
     expect(FirebaseAuth.instance.currentUser?.uid, testUid);
-    debugPrint('SETUP 5: verify UID DONE');
+    print('SETUP 5: verify UID DONE');
 
-    debugPrint('SETUP 6: closeDatabase START');
+    print('SETUP 6: closeDatabase START');
     helper = DatabaseHelper();
     await helper.closeDatabase();
-    debugPrint('SETUP 6: closeDatabase DONE');
+    print('SETUP 6: closeDatabase DONE');
 
-    debugPrint('SETUP 7: openDatabase START');
+    print('SETUP 7: openDatabase START');
     db = await helper.database;
-    debugPrint('SETUP 7: openDatabase DONE');
+    print('SETUP 7: openDatabase DONE');
   });
 
   tearDownAll(() async {

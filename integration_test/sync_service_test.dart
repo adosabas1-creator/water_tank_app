@@ -28,11 +28,20 @@ void main() {
   setUpAll(() async {
     print('SETUP 1: Firebase.initializeApp START');
     try {
-      await Firebase.initializeApp().timeout(
-        const Duration(seconds: 90),
+      print('FIREBASE DIAGNOSTIC: calling initializeApp with explicit test options');
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: 'fake-api-key',
+          appId: '1:123456789012:android:abcdef1234567890',
+          messagingSenderId: '123456789012',
+          projectId: 'alborai-water-tank',
+          storageBucket: 'alborai-water-tank.firebasestorage.app',
+        ),
+      ).timeout(
+        const Duration(seconds: 30),
         onTimeout: () {
           throw TimeoutException(
-            'Firebase.initializeApp exceeded 90 seconds',
+            'Firebase.initializeApp with explicit test options exceeded 30 seconds',
           );
         },
       );

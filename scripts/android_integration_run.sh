@@ -39,37 +39,35 @@ DEVICE_ID="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
 echo "DEVICE_ID=${DEVICE_ID}"
 test -n "${DEVICE_ID}"
 
-for attempt in 1 2; do
-  echo "=== test attempt ${attempt} ==="
-  adb uninstall com.alborai.water_tank_app || true
-  sleep 3
-  TEST_LOG="integration-test-attempt-${attempt}.log"
-  set +e
-  timeout 15m flutter test integration_test/sync_service_test.dart \
-    -d "${DEVICE_ID}" \
-    --reporter expanded \
-    --verbose \
-    --dart-define="SYNC_TEST_UID=${TEST_UID}" \
-    --dart-define="FIREBASE_EMULATOR_HOST=${EMULATOR_HOST}" 2>&1 | tee "${TEST_LOG}"
-  TEST_STATUS=${PIPESTATUS[0]}
-  set -e
+# Keep one diagnostic attempt. The previous retry repeated a 15-minute hang
+# without changing the environment or providing new information.
+TEST_LOG="integration-test-attempt-1.log"
+LOGCAT_FILE="android-logcat-attempt-1.log"
+adb logcat -c || true
 
-  if [ "${TEST_STATUS}" -eq 0 ]; then
-    echo TESTS_PASSED
-    exit 0
-  fi
+echo "=== single integration test attempt (8-minute hard limit) ==="
+set +e
+timeout --signal=INT --kill-after=15s 8m flutter test integration_test/sync_service_test.dart \
+  -d "${DEVICE_ID}" \
+  --reporter expanded \
+  --verbose \
+  --dart-define="SYNC_TEST_UID=${TEST_UID}" \
+  --dart-define="FIREBASE_EMULATOR_HOST=${EMULATOR_HOST}" 2>&1 | tee "${TEST_LOG}"
+TEST_STATUS=${PIPESTATUS[0]}
+set -e
 
-  LOGCAT_FILE="android-logcat-attempt-${attempt}.log"
-  adb logcat -d -v threadtime > "${LOGCAT_FILE}" || true
-  echo "Flutter test exit code: ${TEST_STATUS}"
-  echo "=== Recent Flutter test output ==="
-  tail -n 120 "${TEST_LOG}" || true
-  echo "=== Android errors from logcat ==="
-  grep -iE "FATAL EXCEPTION|AndroidRuntime|flutter.*(error|exception)|Firebase.*(error|exception)" "${LOGCAT_FILE}" | tail -n 100 || true
-  echo "Attempt ${attempt} failed — recovering..."
-  adb wait-for-device
-  sleep 10
-done
+if [ "${TEST_STATUS}" -eq 0 ]; then
+  echo TESTS_PASSED
+  exit 0
+fi
 
-echo TESTS_FAILED_AFTER_RETRIES
-exit 1
+adb logcat -d -v threadtime > "${LOGCAT_FILE}" || true
+echo "Flutter test exit code: ${TEST_STATUS}"
+if [ "${TEST_STATUS}" -eq 124 ] || [ "${TEST_STATUS}" -eq 137 ]; then
+  echo "DIAGNOSTIC_TIMEOUT: Flutter integration test exceeded the 8-minute limit."
+fi
+echo "=== Firebase/Flutter native log lines ==="
+grep -iE "Firebase|FlutterJNI|flutter.*(error|exception)|MissingPlugin|PlatformException|FATAL EXCEPTION|AndroidRuntime" "${LOGCAT_FILE}" | tail -n 160 || true
+echo "=== Final Flutter test output ==="
+tail -n 160 "${TEST_LOG}" || true
+exit "${TEST_STATUS}"

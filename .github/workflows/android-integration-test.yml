@@ -2,6 +2,13 @@ name: Android Integration Tests
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - diagnose/firebase-init-hang
+    paths:
+      - 'integration_test/**'
+      - 'scripts/android_integration_run.sh'
+      - '.github/workflows/android-integration-test.yml'
 
 jobs:
   android-integration:

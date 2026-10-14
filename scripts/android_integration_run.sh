@@ -4,27 +4,58 @@ set -euo pipefail
 TEST_UID="${1:?missing SYNC_TEST_UID}"
 EMULATOR_HOST="${2:-10.0.2.2}"
 
+dump_device_diagnostics() {
+  echo "=== adb devices -l ==="
+  adb devices -l || true
+  echo "=== emulator boot properties ==="
+  adb shell getprop sys.boot_completed 2>/dev/null || true
+  adb shell getprop init.svc.bootanim 2>/dev/null || true
+  adb shell getprop dev.bootcomplete 2>/dev/null || true
+  echo "=== package manager check ==="
+  adb shell pm path android 2>&1 || true
+  echo "=== recent Android logcat ==="
+  adb logcat -d -t 300 -v threadtime 2>&1 || true
+}
+
 echo "Waiting for device..."
-adb wait-for-device
+if ! timeout 120s adb wait-for-device; then
+  echo "ERROR: adb device did not become available within 120 seconds"
+  dump_device_diagnostics
+  exit 1
+fi
 
 echo "Waiting for boot_completed..."
+BOOT_OK=false
 for i in $(seq 1 90); do
   boot="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
   if [ "$boot" = "1" ]; then
     echo BOOT_OK
+    BOOT_OK=true
     break
   fi
   sleep 2
 done
+if [ "$BOOT_OK" != true ]; then
+  echo "ERROR: Android boot did not complete within 180 seconds"
+  dump_device_diagnostics
+  exit 1
+fi
 
 echo "Waiting for package manager..."
+PM_OK=false
 for i in $(seq 1 60); do
   if adb shell pm path android >/dev/null 2>&1; then
     echo PM_OK
+    PM_OK=true
     break
   fi
   sleep 2
 done
+if [ "$PM_OK" != true ]; then
+  echo "ERROR: Android package manager was not ready within 120 seconds"
+  dump_device_diagnostics
+  exit 1
+fi
 
 adb reverse tcp:9099 tcp:9099
 adb reverse tcp:8080 tcp:8080
@@ -37,7 +68,11 @@ sleep 5
 unset CI || true
 DEVICE_ID="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
 echo "DEVICE_ID=${DEVICE_ID}"
-test -n "${DEVICE_ID}"
+if [ -z "${DEVICE_ID}" ]; then
+  echo "ERROR: no Android device is in the 'device' state"
+  dump_device_diagnostics
+  exit 1
+fi
 
 for attempt in 1 2; do
   echo "=== test attempt ${attempt} ==="

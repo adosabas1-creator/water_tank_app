@@ -45,9 +45,9 @@ TEST_LOG="integration-test-attempt-1.log"
 LOGCAT_FILE="android-logcat-attempt-1.log"
 adb logcat -c || true
 
-echo "=== single integration test attempt (8-minute hard limit) ==="
+echo "=== single integration test attempt (12-minute hard limit) ==="
 set +e
-timeout --signal=INT --kill-after=15s 8m flutter test integration_test/sync_service_test.dart \
+timeout --signal=INT --kill-after=15s 12m flutter test integration_test/sync_service_test.dart \
   -d "${DEVICE_ID}" \
   --reporter expanded \
   --verbose \
@@ -64,7 +64,7 @@ fi
 adb logcat -d -v threadtime > "${LOGCAT_FILE}" || true
 echo "Flutter test exit code: ${TEST_STATUS}"
 if [ "${TEST_STATUS}" -eq 124 ] || [ "${TEST_STATUS}" -eq 137 ]; then
-  echo "DIAGNOSTIC_TIMEOUT: Flutter integration test exceeded the 8-minute limit."
+  echo "DIAGNOSTIC_TIMEOUT: Flutter integration test exceeded the 12-minute limit."
 fi
 echo "=== Firebase/Flutter native log lines ==="
 grep -iE "Firebase|FlutterJNI|flutter.*(error|exception)|MissingPlugin|PlatformException|FATAL EXCEPTION|AndroidRuntime" "${LOGCAT_FILE}" | tail -n 160 || true

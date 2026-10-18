@@ -7,24 +7,44 @@ EMULATOR_HOST="${2:-10.0.2.2}"
 echo "Waiting for device..."
 adb wait-for-device
 
-echo "Waiting for boot_completed..."
+echo "Waiting for boot_completed (maximum 180 seconds)..."
+BOOT_OK=false
 for i in $(seq 1 90); do
   boot="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)"
   if [ "$boot" = "1" ]; then
     echo BOOT_OK
+    BOOT_OK=true
     break
   fi
   sleep 2
 done
 
-echo "Waiting for package manager..."
+if [ "$BOOT_OK" != true ]; then
+  echo "ERROR: Android did not report sys.boot_completed=1 within 180 seconds."
+  adb devices -l || true
+  adb shell getprop sys.boot_completed || true
+  adb shell getprop init.svc.bootanim || true
+  exit 70
+fi
+
+echo "Waiting for package manager (maximum 120 seconds)..."
+PM_OK=false
 for i in $(seq 1 60); do
   if adb shell pm path android >/dev/null 2>&1; then
     echo PM_OK
+    PM_OK=true
     break
   fi
   sleep 2
 done
+
+if [ "$PM_OK" != true ]; then
+  echo "ERROR: Android package manager did not become ready within 120 seconds."
+  adb devices -l || true
+  adb shell getprop sys.boot_completed || true
+  adb shell dumpsys activity 2>&1 | head -n 80 || true
+  exit 71
+fi
 
 adb reverse tcp:9099 tcp:9099
 adb reverse tcp:8080 tcp:8080

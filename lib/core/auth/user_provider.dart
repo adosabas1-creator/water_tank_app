@@ -98,7 +98,7 @@ class UserProvider extends ChangeNotifier {
             key: _secureSessionKey,
             value: secureValue,
           );
-          await _secureStorage.delete(key: _secureSessionKey);
+          // Remove the legacy plaintext value only after secure storage succeeds.
           await prefs.remove(_sessionKey);
         }
       }

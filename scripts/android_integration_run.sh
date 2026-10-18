@@ -60,13 +60,14 @@ echo "DEVICE_ID=${DEVICE_ID}"
 test -n "${DEVICE_ID}"
 
 # First isolate Firebase Core initialization from Auth, Firestore, SQLite,
-# and SyncService. If this fails, do not spend another 12 minutes on the full test.
+# and SyncService. Android's first APK installation can be slow on a cold runner,
+# so allow 10 minutes before classifying this as a hang.
 SMOKE_LOG="firebase-core-smoke.log"
 SMOKE_LOGCAT="android-logcat-smoke.log"
 adb logcat -c || true
-echo "=== Firebase Core smoke test (5-minute hard limit) ==="
+echo "=== Firebase Core smoke test (10-minute hard limit) ==="
 set +e
-timeout --signal=INT --kill-after=10s 5m flutter test integration_test/firebase_core_smoke_test.dart \
+timeout --signal=INT --kill-after=15s 10m flutter test integration_test/firebase_core_smoke_test.dart \
   -d "${DEVICE_ID}" \
   --reporter expanded \
   --verbose \

@@ -10,7 +10,7 @@ on:
 
 # Avoid running multiple heavyweight Android emulators for the same PR.
 concurrency:
-  group: android-integration-${{ github.event.pull_request.number || github.ref }}
+  group: android-integration-${{ github.event.pull_request.head.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:

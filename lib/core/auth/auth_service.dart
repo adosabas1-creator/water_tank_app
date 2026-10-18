@@ -518,11 +518,10 @@ class AuthService {
     // New devices must supply the Firebase email explicitly. This removes
     // the public username -> email lookup from Firestore.
     try {
-      final suppliedEmail = firebaseEmail?.trim() ?? '';
-      final email = suppliedEmail.isNotEmpty
-          ? suppliedEmail
-          : _generateAliasEmail(cleanUsername);
-      if (!email.contains('@')) return null;
+      final email = firebaseEmail?.trim() ?? '';
+      // Never invent an alias email: Firebase authentication must use the
+      // real email attached to this account on a new device.
+      if (email.isEmpty || !email.contains('@')) return null;
 
       // Authenticate first. After this succeeds, protected Firestore
       // collections such as user_directory become readable.

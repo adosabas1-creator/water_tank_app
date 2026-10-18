@@ -199,6 +199,8 @@ jobs:
           name: android-integration-diagnostics
           path: |
             firebase-emulator.log
+            firebase-core-smoke.log
+            android-logcat-smoke.log
             integration-test-attempt-*.log
             android-logcat-attempt-*.log
           if-no-files-found: ignore

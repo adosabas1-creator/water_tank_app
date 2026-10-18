@@ -168,7 +168,7 @@ jobs:
             "http://127.0.0.1:8080/v1/projects/alborai-water-tank/databases/(default)/documents/businesses/alborai_water_tank/user_directory/$TEST_UID"
 
       - name: Start Android Emulator
-        timeout-minutes: 30
+        timeout-minutes: 40
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34

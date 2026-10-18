@@ -59,8 +59,30 @@ DEVICE_ID="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
 echo "DEVICE_ID=${DEVICE_ID}"
 test -n "${DEVICE_ID}"
 
-# Keep one diagnostic attempt. The previous retry repeated a 15-minute hang
-# without changing the environment or providing new information.
+# First isolate Firebase Core initialization from Auth, Firestore, SQLite,
+# and SyncService. If this fails, do not spend another 12 minutes on the full test.
+SMOKE_LOG="firebase-core-smoke.log"
+SMOKE_LOGCAT="android-logcat-smoke.log"
+adb logcat -c || true
+echo "=== Firebase Core smoke test (5-minute hard limit) ==="
+set +e
+timeout --signal=INT --kill-after=10s 5m flutter test integration_test/firebase_core_smoke_test.dart \
+  -d "${DEVICE_ID}" \
+  --reporter expanded \
+  --verbose \
+  --dart-define="FIREBASE_EMULATOR_HOST=${EMULATOR_HOST}" 2>&1 | tee "${SMOKE_LOG}"
+SMOKE_STATUS=${PIPESTATUS[0]}
+set -e
+if [ "${SMOKE_STATUS}" -ne 0 ]; then
+  adb logcat -d -v threadtime > "${SMOKE_LOGCAT}" || true
+  echo "FIREBASE_CORE_SMOKE_FAILED: exit code ${SMOKE_STATUS}"
+  grep -iE "Firebase|FlutterJNI|flutter.*(error|exception)|MissingPlugin|PlatformException|FATAL EXCEPTION|AndroidRuntime" "${SMOKE_LOGCAT}" | tail -n 160 || true
+  tail -n 120 "${SMOKE_LOG}" || true
+  exit "${SMOKE_STATUS}"
+fi
+echo "FIREBASE_CORE_SMOKE_PASSED"
+
+# Keep one full integration attempt; do not retry an unchanged environment.
 TEST_LOG="integration-test-attempt-1.log"
 LOGCAT_FILE="android-logcat-attempt-1.log"
 adb logcat -c || true

@@ -652,17 +652,729 @@ class AuthService {
       throw ArgumentError('الدور غير صالح');
     }
 
-    // ✅ إذا لم يُدخل بريد، نولّد alias على Gmail المركزي
-    final cleanEmail = (providedEmail == null || providedEmail.isEmpty)
-        ? _generateAliasEmail(cleanUsername)
-        : providedEmail;
-
+    // Firebase accounts must always use the user's real email address.
+    // Do not create alias addresses: they can make recovery/new-device login fail.
+    final cleanEmail = providedEmail ?? '';
     final emailRegex = RegExp(
-      r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
+      r'^[^\s@]+@[^\s@]+\.[^\s@]+
+
+    final db = await _dbHelper.database;
+
+    // نبحث عن الاسم حتى لو كان المستخدم القديم محذوفًا.
+    // السبب: users.username عليه قيد UNIQUE في SQLite،
+    // لذلك لا يمكن INSERT لاسم سبق استخدامه حتى لو كان is_deleted=1.
+    final duplicate = await db.query(
+      'users',
+      columns: ['id', 'is_deleted'],
+      where: 'username = ?',
+      whereArgs: [cleanUsername],
+      limit: 1,
+    );
+
+    if (duplicate.isNotEmpty &&
+        (duplicate.first['is_deleted'] as num?)?.toInt() == 0) {
+      throw ArgumentError('اسم المستخدم مستخدم بالفعل');
+    }
+
+    final duplicateEmail = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'LOWER(firebase_email) = LOWER(?) AND is_deleted = 0',
+      whereArgs: [cleanEmail],
+      limit: 1,
+    );
+
+    if (duplicateEmail.isNotEmpty) {
+      throw ArgumentError('بريد Firebase مستخدم بالفعل');
+    }
+
+    final firebaseUid = await createFirebaseUser(cleanEmail, password);
+
+    // المستخدم الجديد يُخزّن محليًا باستخدام PBKDF2 مع Salt مستقل.
+    final passwordSalt = await _newPasswordSalt();
+    final passwordHash = await _hashPasswordV2(password, passwordSalt);
+
+    final now = DateTime.now().toIso8601String();
+    final user = User(
+      syncId: const Uuid().v4(),
+      firebaseUid: firebaseUid,
+      firebaseEmail: cleanEmail,
+      username: cleanUsername,
+      passwordHash: passwordHash,
+      passwordSalt: _bytesToHex(passwordSalt),
+      passwordHashVersion: _passwordHashVersion,
+      fullName: cleanFullName,
+      role: role,
+      driverId: driverId,
+      permissions: permissions ?? _defaultPermissionsForRole(role),
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    int localId;
+
+    // إذا كان هناك سجل قديم محذوف بنفس اسم المستخدم،
+    // نعيد استخدامه بدل INSERT حتى لا نصطدم بقيد UNIQUE.
+    if (duplicate.isNotEmpty) {
+      localId = (duplicate.first['id'] as num).toInt();
+
+      final userData = user.toMap()..remove('id');
+
+      await db.update(
+        'users',
+        {
+          ...userData,
+          'is_deleted': 0,
+          'is_synced': 0,
+        },
+        where: 'id = ?',
+        whereArgs: [localId],
+      );
+    } else {
+      localId = await db.insert(
+        'users',
+        user.toMap(),
+      );
+    }
+
+    try {
+      await _publishUserDirectory(user);
+    } catch (e) {
+      // لا نحذف السجل المحلي هنا؛ الاحتفاظ به أفضل من فقدان
+      // المستخدم إذا حدث خطأ مؤقت في الشبكة.
+      rethrow;
+    }
+
+    return localId;
+  }
+
+  Future<bool> updateUser({
+    required int userId,
+    required String username,
+    required String fullName,
+    required String role,
+  }) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
+    final cleanUsername = username.trim();
+    final cleanFullName = fullName.trim();
+    if (cleanUsername.isEmpty) throw ArgumentError('اسم المستخدم مطلوب');
+    if (cleanFullName.isEmpty) throw ArgumentError('الاسم الكامل مطلوب');
+    if (role != 'admin' && role != 'deputy_manager' && role != 'member') {
+      throw ArgumentError('الدور غير صالح');
+    }
+
+    final db = await _dbHelper.database;
+    final duplicate = await db.query(
+      'users',
+      columns: ['id'],
+      where: 'username = ? AND id != ? AND is_deleted = 0',
+      whereArgs: [cleanUsername, userId],
+      limit: 1,
+    );
+    if (duplicate.isNotEmpty) throw ArgumentError('اسم المستخدم مستخدم بالفعل');
+
+    final count = await db.update(
+      'users',
+      {
+        'username': cleanUsername,
+        'full_name': cleanFullName,
+        'role': role,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+
+    if (count == 0) return false;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return false;
+
+    final updatedUser = User.fromMap(rows.first);
+
+    await _publishUserDirectory(updatedUser);
+    return true;
+  }
+
+  Future<bool> deleteUser(int userId) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
+
+    final currentUserId = PermissionService.currentUser?.id;
+    if (currentUserId == userId) {
+      throw StateError('لا يمكنك حذف المستخدم الحالي');
+    }
+
+    final db = await _dbHelper.database;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return false;
+
+    final user = User.fromMap(rows.first);
+
+    final count = await db.update(
+      'users',
+      {
+        'is_deleted': 1,
+        'is_synced': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+
+    if (count == 0) return false;
+
+    final deletedRows = await db.query(
+      'users',
+      where: 'id = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (deletedRows.isNotEmpty) {
+      final deletedUser = User.fromMap(deletedRows.first);
+
+      // المستخدمون القدامى قد لا يملكون Firebase UID.
+      // في هذه الحالة يكفي حذفهم منطقيًا من قاعدة البيانات المحلية.
+      if (deletedUser.firebaseUid != null &&
+          deletedUser.firebaseUid!.trim().isNotEmpty) {
+        // نشر حالة الحذف إلى user_directory حتى يُمنع المستخدم
+        // من تسجيل الدخول على الأجهزة الأخرى.
+        await _publishUserDirectory(deletedUser, isDeleted: true);
+      }
+
+      // إزالة اسم المستخدم من دليل تسجيل الدخول.
+      if (user.username.trim().isNotEmpty) {
+      }
+    }
+
+    return true;
+  }
+
+  Future<void> updateDriver(int userId, int? driverId) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
+    final db = await _dbHelper.database;
+
+    final count = await db.update(
+      'users',
+      {
+        'driver_id': driverId,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+
+    if (count == 0) return;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return;
+
+    await _publishUserDirectory(User.fromMap(rows.first));
+  }
+
+  Future<void> updatePermissions(
+      int userId, Map<String, bool> newPermissions) async {
+    PermissionService.requirePermission(PermissionKeys.permissionsManage);
+
+    debugPrint(
+      'PERMISSION DIAG: updatePermissions START '
+      'userId=$userId permissions=${newPermissions.length}',
+    );
+    final db = await _dbHelper.database;
+    final count = await db.update(
+      'users',
+      {
+        'permissions': User.permissionsToJson(newPermissions),
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+
+    if (count == 0) return;
+
+    final rows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return;
+
+    final diagnosticUser = User.fromMap(rows.first);
+    debugPrint(
+      'PERMISSION DIAG: target user '
+      'id=${diagnosticUser.id} '
+      'username=${diagnosticUser.username} '
+      'firebaseUid=${diagnosticUser.firebaseUid} '
+      'permissions=${diagnosticUser.permissions.length}',
+    );
+
+    await _publishUserDirectory(diagnosticUser);
+
+    debugPrint(
+      'PERMISSION DIAG: _publishUserDirectory completed '
+      'firebaseUid=${diagnosticUser.firebaseUid}',
+    );
+  }
+
+  /// يغيّر كلمة مرور المستخدم في SQLite + Firebase Auth.
+  ///
+  /// [currentPassword]: كلمة المرور الحالية - مطلوبة فقط إذا كان
+  /// المستخدم يغيّر كلمته بنفسه (لإعادة المصادقة).
+  ///
+  /// ملاحظة مهمة (Spark-only، بدون Cloud Functions):
+  /// - إذا كان المستخدم يغيّر كلمته بنفسه → updatePassword مباشرة
+  /// - إذا كان المدير يغيّر كلمة سائق آخر → يُرسل رابط إعادة تعيين
+  ///   (لأن Firebase يمنع تغيير كلمة مرور مستخدم آخر من الـ client)
+  Future<bool> updateUserPassword({
+    required int userId,
+    required String newPassword,
+    String? currentPassword,
+  }) async {
+    if (newPassword.length < 6) {
+      throw ArgumentError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
+    }
+
+    final db = await _dbHelper.database;
+
+    final targetRows = await db.query(
+      'users',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+      limit: 1,
+    );
+    if (targetRows.isEmpty) return false;
+
+    final targetUser = User.fromMap(targetRows.first);
+    final targetEmail = targetUser.firebaseEmail?.trim() ?? '';
+    final currentFirebaseUser = _firebaseAuth.currentUser;
+
+    if (targetEmail.isEmpty) {
+      throw StateError('حساب المستخدم غير مرتبط بـ Firebase');
+    }
+
+    // تغيير كلمة المرور مسموح للحساب الحالي فقط من تطبيق العميل.
+    // يجب نجاح Firebase أولًا، وبعدها فقط نحدّث SQLite.
+    if (currentFirebaseUser == null ||
+        currentFirebaseUser.email?.trim().toLowerCase() !=
+            targetEmail.toLowerCase()) {
+      PermissionService.requirePermission(PermissionKeys.usersManage);
+      throw StateError(
+        'لا يمكن للمدير تعيين كلمة مرور مستخدم آخر مباشرة من التطبيق. '
+        'استخدم رابط استعادة كلمة المرور؛ لم يتم تغيير كلمة المرور المحلية.',
+      );
+    }
+
+    try {
+      if (currentPassword != null && currentPassword.isNotEmpty) {
+        final cred = firebase_auth.EmailAuthProvider.credential(
+          email: targetEmail,
+          password: currentPassword,
+        );
+        await currentFirebaseUser.reauthenticateWithCredential(cred);
+      }
+
+      await currentFirebaseUser.updatePassword(newPassword);
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'wrong-password':
+        case 'invalid-credential':
+          throw StateError('كلمة المرور الحالية غير صحيحة');
+        case 'requires-recent-login':
+          throw StateError(
+            'انتهت صلاحية جلسة Firebase. سجّل الدخول مرة أخرى ثم حاول.',
+          );
+        case 'network-request-failed':
+          throw StateError(
+            'تعذر الاتصال بـ Firebase. لم يتم تغيير كلمة المرور المحلية.',
+          );
+        case 'weak-password':
+          throw StateError('كلمة المرور الجديدة ضعيفة');
+        default:
+          throw StateError(
+            'تعذر تغيير كلمة المرور في Firebase. رمز الخطأ: ${e.code}',
+          );
+      }
+    } catch (e) {
+      throw StateError(
+        'تعذر تغيير كلمة المرور في Firebase. لم يتم تغيير كلمة المرور المحلية.',
+      );
+    }
+
+    final passwordSalt = await _newPasswordSalt();
+    final passwordHash = await _hashPasswordV2(newPassword, passwordSalt);
+
+    final count = await db.update(
+      'users',
+      {
+        'password_hash': passwordHash,
+        'password_salt': _bytesToHex(passwordSalt),
+        'password_hash_version': _passwordHashVersion,
+        'must_change_password': 0,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+
+    return count > 0;
+  }
+
+  Future<List<User>> getAllUsers() async {
+    final db = await _dbHelper.database;
+    final result = await db.query('users', where: 'is_deleted = 0');
+    return result.map((e) => User.fromMap(e)).toList();
+  }
+
+  Future<int> removeDefaultUsers() async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
+    final db = await _dbHelper.database;
+
+    final usernames = List.generate(10, (index) => 'مستخدم ${index + 1}');
+    final placeholders = List.filled(usernames.length, '?').join(',');
+
+    final rows = await db.query(
+      'users',
+      where: "username IN ($placeholders) AND is_deleted = 0",
+      whereArgs: usernames,
+    );
+
+    if (rows.isEmpty) return 0;
+
+    final now = DateTime.now().toIso8601String();
+
+    final count = await db.update(
+      'users',
+      {
+        'is_deleted': 1,
+        'is_synced': 0,
+        'updated_at': now,
+      },
+      where: "username IN ($placeholders) AND is_deleted = 0",
+      whereArgs: usernames,
+    );
+
+    for (final row in rows) {
+      final user = User.fromMap({
+        ...row,
+        'is_deleted': 1,
+        'updated_at': now,
+        'is_synced': 0,
+      });
+
+      if (user.firebaseUid != null && user.firebaseUid!.isNotEmpty) {
+        await _publishUserDirectory(user, isDeleted: true);
+      }
+    }
+
+    return count;
+  }
+
+  Future<bool> setRecoveryCode({
+    required int userId,
+    required String recoveryCode,
+  }) async {
+    PermissionService.requirePermission(PermissionKeys.usersManage);
+    final code = recoveryCode.trim();
+    if (code.length < 6) {
+      throw ArgumentError(
+          'رمز الاسترداد يجب أن يكون 6 أحرف أو أرقام على الأقل');
+    }
+    final db = await _dbHelper.database;
+    final recoveryCodeSalt = await _newPasswordSalt();
+    final recoveryCodeHash = await _hashPasswordV2(code, recoveryCodeSalt);
+    final count = await db.update(
+      'users',
+      {
+        'recovery_code_hash': recoveryCodeHash,
+        'recovery_code_salt': _bytesToHex(recoveryCodeSalt),
+        'recovery_code_hash_version': _passwordHashVersion,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [userId],
+    );
+    return count > 0;
+  }
+
+  Future<bool> verifyRecoveryCode({
+    required String username,
+    required String recoveryCode,
+  }) async {
+    final db = await _dbHelper.database;
+    final cleanUsername = username.trim();
+    final cleanRecoveryCode = recoveryCode.trim();
+
+    final rows = await db.query(
+      'users',
+      columns: [
+        'id',
+        'recovery_code_hash',
+        'recovery_code_salt',
+        'recovery_code_hash_version',
+      ],
+      where: 'username = ? AND is_deleted = 0',
+      whereArgs: [cleanUsername],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return false;
+
+    final user = rows.first;
+    final storedHash = user['recovery_code_hash']?.toString() ?? '';
+    if (storedHash.isEmpty) return false;
+
+    final hashVersion =
+        (user['recovery_code_hash_version'] as num?)?.toInt() ?? 1;
+    final saltText = user['recovery_code_salt']?.toString().trim() ?? '';
+
+    if (hashVersion >= 2 && saltText.isNotEmpty) {
+      try {
+        final salt = _hexToBytes(saltText);
+        final calculatedHash = await _hashPasswordV2(
+          cleanRecoveryCode,
+          salt,
+        );
+        return _constantTimeEquals(calculatedHash, storedHash);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    // دعم أكواد الاسترداد القديمة SHA-256 وترقيتها بعد نجاح التحقق.
+    final legacyHash = _hashPassword(cleanRecoveryCode);
+    if (!_constantTimeEquals(legacyHash, storedHash)) {
+      return false;
+    }
+
+    final newSalt = await _newPasswordSalt();
+    final newHash = await _hashPasswordV2(
+      cleanRecoveryCode,
+      newSalt,
+    );
+
+    await db.update(
+      'users',
+      {
+        'recovery_code_hash': newHash,
+        'recovery_code_salt': _bytesToHex(newSalt),
+        'recovery_code_hash_version': _passwordHashVersion,
+        'updated_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      },
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [user['id']],
+    );
+
+    return true;
+  }
+
+  Future<bool> sendPasswordResetByRecoveryCode({
+    required String username,
+    required String recoveryCode,
+  }) async {
+    final db = await _dbHelper.database;
+    final cleanUsername = username.trim();
+    final cleanRecoveryCode = recoveryCode.trim();
+
+    final result = await db.query(
+      'users',
+      columns: [
+        'id',
+        'firebase_email',
+        'recovery_code_hash',
+        'recovery_code_salt',
+        'recovery_code_hash_version',
+      ],
+      where: 'username = ? AND is_deleted = 0',
+      whereArgs: [cleanUsername],
+      limit: 1,
+    );
+
+    if (result.isEmpty) return false;
+
+    final user = result.first;
+    final storedHash = user['recovery_code_hash']?.toString() ?? '';
+    if (storedHash.isEmpty) return false;
+
+    final hashVersion =
+        (user['recovery_code_hash_version'] as num?)?.toInt() ?? 1;
+    final saltText = user['recovery_code_salt']?.toString().trim() ?? '';
+
+    bool verified = false;
+
+    if (hashVersion >= 2 && saltText.isNotEmpty) {
+      try {
+        final salt = _hexToBytes(saltText);
+        final calculatedHash = await _hashPasswordV2(
+          cleanRecoveryCode,
+          salt,
+        );
+        verified = _constantTimeEquals(calculatedHash, storedHash);
+      } catch (_) {
+        return false;
+      }
+    } else {
+      final legacyHash = _hashPassword(cleanRecoveryCode);
+      verified = _constantTimeEquals(legacyHash, storedHash);
+    }
+
+    if (!verified) return false;
+
+    final email = user['firebase_email']?.toString().trim() ?? '';
+    if (email.isEmpty || !email.contains('@')) {
+      throw StateError(
+        'لا يوجد بريد إلكتروني مرتبط بهذا الحساب لاستعادة كلمة المرور',
+      );
+    }
+
+    // ترقية رمز الاسترداد القديم إلى PBKDF2 قبل إرسال رابط الاستعادة.
+    if (hashVersion < 2 || saltText.isEmpty) {
+      final newSalt = await _newPasswordSalt();
+      final newHash = await _hashPasswordV2(
+        cleanRecoveryCode,
+        newSalt,
+      );
+
+      await db.update(
+        'users',
+        {
+          'recovery_code_hash': newHash,
+          'recovery_code_salt': _bytesToHex(newSalt),
+          'recovery_code_hash_version': _passwordHashVersion,
+          'updated_at': DateTime.now().toIso8601String(),
+          'is_synced': 0,
+        },
+        where: 'id = ? AND is_deleted = 0',
+        whereArgs: [user['id']],
+      );
+    }
+
+    await sendPasswordResetEmail(email);
+    return true;
+  }
+
+  String _hashPassword(String password) {
+    return sha256.convert(utf8.encode(password)).toString();
+  }
+
+  // الإصدار 2: PBKDF2-HMAC-SHA256 مع Salt عشوائي مستقل لكل مستخدم.
+  static const int _passwordHashVersion = 2;
+  static const int _passwordSaltLength = 16;
+  static const int _pbkdf2Iterations = 100000;
+  static const int _pbkdf2Bits = 256;
+
+  final crypto2.Pbkdf2 _passwordKdf = crypto2.Pbkdf2(
+    macAlgorithm: crypto2.Hmac.sha256(),
+    iterations: _pbkdf2Iterations,
+    bits: _pbkdf2Bits,
+  );
+
+  List<int> _generatePasswordSalt() {
+    final random = Random.secure();
+    return List<int>.generate(
+      _passwordSaltLength,
+      (_) => random.nextInt(256),
+    );
+  }
+
+  Future<String> _hashPasswordV2(
+    String password,
+    List<int> salt,
+  ) async {
+    final secretKey = await _passwordKdf.deriveKeyFromPassword(
+      password: password,
+      nonce: salt,
+    );
+
+    final bytes = await secretKey.extractBytes();
+    return bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  List<int> _hexToBytes(String hex) {
+    final clean = hex.trim();
+
+    if (clean.isEmpty || clean.length.isOdd) {
+      throw FormatException('Invalid hexadecimal salt');
+    }
+
+    final bytes = <int>[];
+
+    for (var i = 0; i < clean.length; i += 2) {
+      bytes.add(int.parse(clean.substring(i, i + 2), radix: 16));
+    }
+
+    return bytes;
+  }
+
+  String _bytesToHex(List<int> bytes) {
+    return bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+  }
+
+  bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+
+    var difference = 0;
+
+    for (var i = 0; i < a.length; i++) {
+      difference |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+
+    return difference == 0;
+  }
+
+  Future<List<int>> _newPasswordSalt() async {
+    return _generatePasswordSalt();
+  }
+
+  Map<String, bool> _defaultPermissionsForRole(String role) {
+    switch (role) {
+      case 'admin':
+        return DefaultPermissions.admin();
+      case 'deputy_manager':
+        return DefaultPermissions.deputyManager();
+      case 'member':
+        return DefaultPermissions.member();
+      default:
+        return DefaultPermissions.member();
+    }
+  }
+}
+,
     );
 
     if (!emailRegex.hasMatch(cleanEmail)) {
-      throw ArgumentError('بريد Firebase غير صالح');
+      throw ArgumentError('يجب إدخال بريد إلكتروني حقيقي وصحيح لـ Firebase');
     }
 
     final db = await _dbHelper.database;

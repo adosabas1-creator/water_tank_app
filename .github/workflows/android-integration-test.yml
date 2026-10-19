@@ -167,6 +167,13 @@ jobs:
             --data-binary @/tmp/user-directory.json \
             "http://127.0.0.1:8080/v1/projects/alborai-water-tank/databases/(default)/documents/businesses/alborai_water_tank/user_directory/$TEST_UID"
 
+      - name: Reduce Gradle memory for the hosted emulator
+        run: |
+          # The hosted runner has limited RAM. The previous 3 GiB Gradle heap
+          # competed with the 4 GiB AVD and caused system-wide Android ANRs.
+          sed -i 's/-Xmx3G/-Xmx1536m/; s/MaxMetaspaceSize=1G/MaxMetaspaceSize=512m/' android/gradle.properties
+          cat android/gradle.properties
+
       - name: Start Android Emulator
         timeout-minutes: 40
         uses: reactivecircus/android-emulator-runner@v2
@@ -176,9 +183,9 @@ jobs:
           arch: x86_64
           profile: pixel_2
           force-avd-creation: true
-          ram-size: 4096
-          heap-size: 1024
-          disk-size: 8192M
+          ram-size: 2048
+          heap-size: 512
+          disk-size: 4096M
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           disable-animations: true
           emulator-boot-timeout: 1200

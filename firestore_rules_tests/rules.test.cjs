@@ -8,7 +8,7 @@ const {
 } = require('@firebase/rules-unit-testing');
 const { doc, setDoc } = require('firebase/firestore');
 
-const projectId = 'demo-alborai-water-tank-rules';
+const projectId = 'demo-alborai-water-tank';
 const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
 let env;
 

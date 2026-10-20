@@ -64,6 +64,9 @@ firestore.rules.before-*
 
 # === Local temporary/debug files ===
 alborai_water_db.db
+alborai_water_db.db-wal
+alborai_water_db.db-shm
+alborai_water_db.db-journal
 done
 echo
 grep
@@ -86,3 +89,17 @@ android/app/keystore/
 .env
 coverage/
 android/app/google-services.json
+
+# === Additional credentials and local Firebase state ===
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.mobileprovision
+service-account*.json
+firebase-adminsdk*.json
+*-firebase-adminsdk-*.json
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

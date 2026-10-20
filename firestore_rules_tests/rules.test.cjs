@@ -6,7 +6,7 @@ const {
   assertSucceeds,
   assertFails,
 } = require('@firebase/rules-unit-testing');
-const { collection, doc, getDoc, getDocs, setDoc } = require('firebase/firestore');
+const { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } = require('firebase/firestore');
 
 const projectId = 'demo-alborai-water-tank';
 const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
@@ -166,9 +166,30 @@ test('permits admins to create login directory entries', async () => {
 
 test('denies members from deleting login directory entries', async () => {
   const db = env.authenticatedContext('allowed-uid').firestore();
-  await assertFails(
-    require('firebase/firestore').deleteDoc(
-      doc(db, 'businesses/alborai_water_tank/login_directory/sample-user'),
-    ),
-  );
+  await assertFails(deleteDoc(
+    doc(db, 'businesses/alborai_water_tank/login_directory/sample-user'),
+  ));
+});
+
+test('denies members from updating login directory entries', async () => {
+  const db = env.authenticatedContext('allowed-uid').firestore();
+  await assertFails(updateDoc(
+    doc(db, 'businesses/alborai_water_tank/login_directory/sample-user'),
+    { firebase_uid: 'attacker-uid' },
+  ));
+});
+
+test('permits admins to update login directory entries', async () => {
+  const db = env.authenticatedContext('admin-uid').firestore();
+  await assertSucceeds(updateDoc(
+    doc(db, 'businesses/alborai_water_tank/login_directory/sample-user'),
+    { firebase_uid: 'updated-uid' },
+  ));
+});
+
+test('permits admins to delete login directory entries', async () => {
+  const db = env.authenticatedContext('admin-uid').firestore();
+  await assertSucceeds(deleteDoc(
+    doc(db, 'businesses/alborai_water_tank/login_directory/sample-user'),
+  ));
 });

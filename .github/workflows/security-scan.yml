@@ -26,15 +26,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  dependency-review:
-    name: Review dependency changes
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+  dependency-scan:
+    name: Scan locked Flutter dependencies for known vulnerabilities
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.0
+    with:
+      scan-args: |-
+        --lockfile=./pubspec.lock
     permissions:
+      actions: read
       contents: read
-      pull-requests: write
-    steps:
-      - name: Review dependency vulnerabilities and licenses
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
+      security-events: write

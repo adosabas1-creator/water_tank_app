@@ -59,30 +59,9 @@ service cloud.firestore {
       allow get: if false;
       allow list: if false;
 
-      allow create: if isAdmin() ||
-        (
-          signedIn() &&
-          request.resource.data.get('username', '') == username &&
-          request.resource.data.get('firebase_uid', '') == request.auth.uid &&
-          request.resource.data.get('firebase_email', '') ==
-            request.auth.token.email
-        );
-
-      allow update: if isAdmin() ||
-        (
-          signedIn() &&
-          resource.data.get('firebase_uid', '') == request.auth.uid &&
-          request.resource.data.get('firebase_uid', '') == request.auth.uid &&
-          request.resource.data.get('username', '') == username &&
-          request.resource.data.get('firebase_email', '') ==
-            request.auth.token.email
-        );
-
-      allow delete: if isAdmin() ||
-        (
-          signedIn() &&
-          resource.data.get('firebase_uid', '') == request.auth.uid
-        );
+      // إدارة هذا الدليل محصورة بالمدير؛ فهو يُنشر من مسارات إدارة المستخدمين.
+      // لا تسمح بإنشاء اسم مستخدم عشوائي من حساب عضو عادي.
+      allow create, update, delete: if isAdmin();
     }
 
     // ============================================================

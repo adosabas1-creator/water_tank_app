@@ -6,7 +6,7 @@ const {
   assertSucceeds,
   assertFails,
 } = require('@firebase/rules-unit-testing');
-const { doc, setDoc } = require('firebase/firestore');
+const { collection, doc, getDoc, getDocs, setDoc } = require('firebase/firestore');
 
 const projectId = 'demo-alborai-water-tank';
 const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
@@ -53,6 +53,10 @@ beforeEach(async () => {
         sync_id: 'sync-deputy',
         permissions: {},
       },
+    );
+    await setDoc(
+      doc(context.firestore(), 'businesses/alborai_water_tank/login_directory/sample-user'),
+      { username: 'sample-user', firebase_uid: 'allowed-uid' },
     );
   });
 });
@@ -114,5 +118,20 @@ test('permits deputy managers to create logs with their own sync identity', asyn
   await assertSucceeds(setDoc(
     doc(db, 'businesses/alborai_water_tank/operation_logs/log-deputy'),
     logData('sync-deputy'),
+  ));
+});
+
+
+test('denies direct get access to login_directory documents', async () => {
+  const db = env.authenticatedContext('allowed-uid').firestore();
+  await assertFails(getDoc(
+    doc(db, 'businesses/alborai_water_tank/login_directory/sample-user'),
+  ));
+});
+
+test('denies list access to login_directory documents', async () => {
+  const db = env.authenticatedContext('admin-uid').firestore();
+  await assertFails(getDocs(
+    collection(db, 'businesses/alborai_water_tank/login_directory'),
   ));
 });

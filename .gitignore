@@ -64,6 +64,9 @@ firestore.rules.before-*
 
 # === Local temporary/debug files ===
 alborai_water_db.db
+alborai_water_db.db-wal
+alborai_water_db.db-shm
+alborai_water_db.db-journal
 done
 echo
 grep

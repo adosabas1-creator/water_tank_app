@@ -38,6 +38,22 @@ beforeEach(async () => {
         permissions: { logs_view: false },
       },
     );
+    await setDoc(
+      doc(context.firestore(), 'businesses/alborai_water_tank/user_directory/admin-uid'),
+      {
+        role: 'admin',
+        sync_id: 'sync-admin',
+        permissions: {},
+      },
+    );
+    await setDoc(
+      doc(context.firestore(), 'businesses/alborai_water_tank/user_directory/deputy-uid'),
+      {
+        role: 'deputy_manager',
+        sync_id: 'sync-deputy',
+        permissions: {},
+      },
+    );
   });
 });
 
@@ -82,5 +98,21 @@ test('denies unauthenticated operation log creation', async () => {
   await assertFails(setDoc(
     doc(db, 'businesses/alborai_water_tank/operation_logs/log-unauthenticated'),
     logData('sync-allowed'),
+  ));
+});
+
+test('permits admins to create logs with their own sync identity', async () => {
+  const db = env.authenticatedContext('admin-uid').firestore();
+  await assertSucceeds(setDoc(
+    doc(db, 'businesses/alborai_water_tank/operation_logs/log-admin'),
+    logData('sync-admin'),
+  ));
+});
+
+test('permits deputy managers to create logs with their own sync identity', async () => {
+  const db = env.authenticatedContext('deputy-uid').firestore();
+  await assertSucceeds(setDoc(
+    doc(db, 'businesses/alborai_water_tank/operation_logs/log-deputy'),
+    logData('sync-deputy'),
   ));
 });

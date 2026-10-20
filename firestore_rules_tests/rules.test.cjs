@@ -135,3 +135,40 @@ test('denies list access to login_directory documents', async () => {
     collection(db, 'businesses/alborai_water_tank/login_directory'),
   ));
 });
+
+test('denies members from creating arbitrary login directory entries', async () => {
+  const db = env.authenticatedContext('allowed-uid', {
+    email: 'member@example.com',
+  }).firestore();
+  await assertFails(setDoc(
+    doc(db, 'businesses/alborai_water_tank/login_directory/arbitrary-name'),
+    {
+      username: 'arbitrary-name',
+      firebase_uid: 'allowed-uid',
+      firebase_email: 'member@example.com',
+    },
+  ));
+});
+
+test('permits admins to create login directory entries', async () => {
+  const db = env.authenticatedContext('admin-uid', {
+    email: 'admin@example.com',
+  }).firestore();
+  await assertSucceeds(setDoc(
+    doc(db, 'businesses/alborai_water_tank/login_directory/new-user'),
+    {
+      username: 'new-user',
+      firebase_uid: 'new-user-uid',
+      firebase_email: 'new-user@example.com',
+    },
+  ));
+});
+
+test('denies members from deleting login directory entries', async () => {
+  const db = env.authenticatedContext('allowed-uid').firestore();
+  await assertFails(
+    require('firebase/firestore').deleteDoc(
+      doc(db, 'businesses/alborai_water_tank/login_directory/sample-user'),
+    ),
+  );
+});
